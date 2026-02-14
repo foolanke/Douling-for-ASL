@@ -1,0 +1,312 @@
+import { useState, useCallback } from "react";
+import { motion } from "motion/react";
+import { LessonNode } from "./lesson-node";
+import { Confetti } from "./confetti";
+import { LessonCompleteModal } from "./lesson-complete-modal";
+import { Sidebar } from "./sidebar";
+import { PathDecorations } from "./path-decorations";
+import { Flame, Star, TrendingUp, Settings, Sparkles } from "lucide-react";
+import { Button } from "./ui/button";
+import { Progress } from "./ui/progress";
+
+interface Lesson {
+  id: number;
+  title: string;
+  description: string;
+  type: 'lesson' | 'checkpoint' | 'achievement';
+  xp: number;
+  unit: number;
+}
+
+const lessons: Lesson[] = [
+  { id: 1, title: "Lesson 1", description: "Welcome & Basics", type: 'lesson', xp: 10, unit: 1 },
+  { id: 2, title: "Lesson 2", description: "Greetings", type: 'lesson', xp: 10, unit: 1 },
+  { id: 3, title: "Lesson 3", description: "Common Phrases", type: 'lesson', xp: 15, unit: 1 },
+  { id: 4, title: "Unit 1 Test", description: "Test your skills", type: 'checkpoint', xp: 25, unit: 1 },
+  
+  { id: 5, title: "Lesson 4", description: "Numbers & Counting", type: 'lesson', xp: 15, unit: 2 },
+  { id: 6, title: "Lesson 5", description: "Colors", type: 'lesson', xp: 15, unit: 2 },
+  { id: 7, title: "Lesson 6", description: "Food & Drinks", type: 'lesson', xp: 20, unit: 2 },
+  { id: 8, title: "Lesson 7", description: "Animals", type: 'lesson', xp: 20, unit: 2 },
+  { id: 9, title: "Unit Master", description: "Unit 2 Complete!", type: 'achievement', xp: 50, unit: 2 },
+  
+  { id: 10, title: "Lesson 8", description: "Family Members", type: 'lesson', xp: 20, unit: 3 },
+  { id: 11, title: "Lesson 9", description: "Body Parts", type: 'lesson', xp: 20, unit: 3 },
+  { id: 12, title: "Lesson 10", description: "Emotions", type: 'lesson', xp: 25, unit: 3 },
+  { id: 13, title: "Unit 3 Test", description: "Checkpoint", type: 'checkpoint', xp: 30, unit: 3 },
+  
+  { id: 14, title: "Lesson 11", description: "Places & Locations", type: 'lesson', xp: 25, unit: 4 },
+  { id: 15, title: "Lesson 12", description: "Travel", type: 'lesson', xp: 25, unit: 4 },
+  { id: 16, title: "Lesson 13", description: "Shopping", type: 'lesson', xp: 30, unit: 4 },
+  { id: 17, title: "Lesson 14", description: "Weather", type: 'lesson', xp: 30, unit: 4 },
+  { id: 18, title: "Lesson 15", description: "Time & Dates", type: 'lesson', xp: 30, unit: 4 },
+  { id: 19, title: "Final Test", description: "You did it!", type: 'achievement', xp: 100, unit: 4 },
+];
+
+const positions: ('left' | 'center' | 'right')[] = [
+  'center', 'right', 'left', 'center', 
+  'left', 'right', 'center', 'left', 'center',
+  'right', 'left', 'center', 'center',
+  'left', 'right', 'center', 'left', 'right', 'center'
+];
+
+export function LessonPath() {
+  const [completedLessons, setCompletedLessons] = useState<Set<number>>(new Set());
+  const [totalXP, setTotalXP] = useState(0);
+  const [showConfetti, setShowConfetti] = useState(false);
+  const [showModal, setShowModal] = useState(false);
+  const [currentLesson, setCurrentLesson] = useState<Lesson | null>(null);
+  const [dailyGoal, setDailyGoal] = useState(0);
+  const [streak, setStreak] = useState(3);
+
+  const level = Math.floor(totalXP / 100) + 1;
+  const xpForNextLevel = (level * 100) - totalXP;
+  const levelProgress = (totalXP % 100);
+
+  const handleLessonClick = useCallback((lessonId: number) => {
+    const lesson = lessons[lessonId];
+    setCurrentLesson(lesson);
+    setCompletedLessons((prev) => {
+      const newSet = new Set(prev);
+      newSet.add(lessonId);
+      return newSet;
+    });
+    setTotalXP((prev) => prev + lesson.xp);
+    setDailyGoal((prev) => prev + lesson.xp);
+    setShowConfetti(true);
+    setShowModal(true);
+  }, []);
+
+  const getLessonStatus = (lessonId: number): 'locked' | 'unlocked' | 'completed' => {
+    if (completedLessons.has(lessonId)) return 'completed';
+    if (lessonId === 0) return 'unlocked';
+    const previousCompleted = completedLessons.has(lessonId - 1);
+    return previousCompleted ? 'unlocked' : 'locked';
+  };
+
+  const progress = (completedLessons.size / lessons.length) * 100;
+  const dailyGoalProgress = Math.min((dailyGoal / 50) * 100, 100);
+  const unitStarts = [0, 4, 9, 13];
+
+  return (
+    <div className="flex h-screen bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 overflow-hidden">
+      {/* Sidebar */}
+      <Sidebar
+        streak={streak}
+        level={level}
+        totalXP={totalXP}
+        dailyGoal={dailyGoal}
+        completedLessons={completedLessons.size}
+        totalLessons={lessons.length}
+      />
+
+      {/* Main Content Area */}
+      <div className="flex-1 ml-80 flex flex-col h-screen">
+        <Confetti show={showConfetti} onComplete={() => setShowConfetti(false)} />
+        
+        {currentLesson && (
+          <LessonCompleteModal
+            isOpen={showModal}
+            xpEarned={currentLesson.xp}
+            lessonTitle={currentLesson.title}
+            onContinue={() => setShowModal(false)}
+          />
+        )}
+
+        {/* Top Header */}
+        <motion.div
+          className="bg-slate-900/80 backdrop-blur-xl shadow-2xl z-30 px-8 py-4 border-b border-slate-800 flex items-center justify-between"
+          initial={{ y: -100 }}
+          animate={{ y: 0 }}
+          transition={{ type: "spring", stiffness: 100 }}
+        >
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-purple-600 rounded-xl flex items-center justify-center shadow-lg">
+              <Sparkles className="w-6 h-6 text-white" />
+            </div>
+            <h1 className="text-2xl font-bold bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">
+              LearnQuest
+            </h1>
+          </div>
+
+          <div className="flex items-center gap-6">
+            {/* Progress Stats */}
+            <motion.div
+              className="flex items-center gap-3 bg-gradient-to-br from-orange-500/20 to-red-500/20 px-4 py-2.5 rounded-xl border border-orange-500/30"
+              whileHover={{ scale: 1.05 }}
+            >
+              <Flame className="w-5 h-5 text-orange-400" />
+              <div>
+                <div className="text-xs text-orange-300/80 font-medium">Streak</div>
+                <div className="font-bold text-orange-400">{streak} days</div>
+              </div>
+            </motion.div>
+
+            <motion.div
+              className="flex items-center gap-3 bg-gradient-to-br from-yellow-500/20 to-orange-500/20 px-4 py-2.5 rounded-xl border border-yellow-500/30"
+              whileHover={{ scale: 1.05 }}
+            >
+              <Star className="w-5 h-5 text-yellow-400 fill-yellow-400" />
+              <div>
+                <div className="text-xs text-yellow-300/80 font-medium">Level {level}</div>
+                <div className="text-[10px] text-yellow-400/70">{xpForNextLevel} XP to next</div>
+              </div>
+            </motion.div>
+
+            <motion.div
+              className="flex items-center gap-3 bg-gradient-to-br from-blue-500/20 to-purple-500/20 px-4 py-2.5 rounded-xl border border-blue-500/30 min-w-[180px]"
+              whileHover={{ scale: 1.05 }}
+            >
+              <TrendingUp className="w-5 h-5 text-blue-400" />
+              <div className="flex-1">
+                <div className="flex justify-between items-center mb-1">
+                  <span className="text-xs text-blue-300/80 font-medium">Total XP</span>
+                  <span className="text-xs font-bold text-blue-400">{totalXP}</span>
+                </div>
+                <Progress value={levelProgress} className="h-1.5 bg-slate-800" />
+              </div>
+            </motion.div>
+
+            <Button variant="ghost" size="icon" className="text-slate-400 hover:text-slate-200 hover:bg-slate-800">
+              <Settings className="w-5 h-5" />
+            </Button>
+          </div>
+        </motion.div>
+
+        {/* Scrollable Path Area */}
+        <div className="flex-1 overflow-y-auto overflow-x-hidden relative">
+          <PathDecorations totalLessons={lessons.length} />
+          
+          <div className="relative max-w-2xl mx-auto py-16 px-8">
+            {/* Cartoon Path Background - Fixed size */}
+            <div className="absolute left-1/2 top-0 bottom-0 -translate-x-1/2 w-[280px]" style={{ zIndex: 1 }}>
+              <svg 
+                className="w-full h-full"
+                viewBox="0 0 280 2200"
+                preserveAspectRatio="xMidYMin meet"
+              >
+                <defs>
+                  <linearGradient id="pathGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+                    <stop offset="0%" stopColor="#1e40af" stopOpacity="0.5" />
+                    <stop offset="50%" stopColor="#7c3aed" stopOpacity="0.4" />
+                    <stop offset="100%" stopColor="#db2777" stopOpacity="0.5" />
+                  </linearGradient>
+                  
+                  <filter id="glow">
+                    <feGaussianBlur stdDeviation="4" result="coloredBlur"/>
+                    <feMerge>
+                      <feMergeNode in="coloredBlur"/>
+                      <feMergeNode in="SourceGraphic"/>
+                    </feMerge>
+                  </filter>
+                </defs>
+
+                {/* Shadow path */}
+                <motion.path
+                  d="M 140 0 
+                     C 140 50, 160 80, 180 100
+                     C 200 120, 180 160, 140 180
+                     C 100 200, 80 240, 100 280
+                     C 120 320, 160 320, 180 360
+                     C 200 400, 180 440, 140 460
+                     C 100 480, 60 520, 80 580
+                     C 100 640, 160 660, 180 700
+                     C 200 740, 180 780, 140 820
+                     C 100 860, 80 900, 100 940
+                     C 120 980, 160 1000, 180 1040
+                     C 200 1080, 180 1120, 140 1160
+                     C 100 1200, 60 1240, 100 1300
+                     C 140 1360, 200 1360, 200 1420
+                     C 200 1480, 160 1520, 140 1560
+                     C 120 1600, 100 1640, 120 1680
+                     C 140 1720, 180 1740, 180 1780
+                     C 180 1820, 160 1860, 140 1900
+                     C 120 1940, 100 1980, 140 2020
+                     L 140 2200"
+                  stroke="#0f172a"
+                  strokeWidth="95"
+                  fill="none"
+                  strokeLinecap="round"
+                  opacity="0.7"
+                  initial={{ pathLength: 0 }}
+                  animate={{ pathLength: 1 }}
+                  transition={{ duration: 2, ease: "easeInOut" }}
+                />
+
+                {/* Main glowing path */}
+                <motion.path
+                  d="M 140 0 
+                     C 140 50, 160 80, 180 100
+                     C 200 120, 180 160, 140 180
+                     C 100 200, 80 240, 100 280
+                     C 120 320, 160 320, 180 360
+                     C 200 400, 180 440, 140 460
+                     C 100 480, 60 520, 80 580
+                     C 100 640, 160 660, 180 700
+                     C 200 740, 180 780, 140 820
+                     C 100 860, 80 900, 100 940
+                     C 120 980, 160 1000, 180 1040
+                     C 200 1080, 180 1120, 140 1160
+                     C 100 1200, 60 1240, 100 1300
+                     C 140 1360, 200 1360, 200 1420
+                     C 200 1480, 160 1520, 140 1560
+                     C 120 1600, 100 1640, 120 1680
+                     C 140 1720, 180 1740, 180 1780
+                     C 180 1820, 160 1860, 140 1900
+                     C 120 1940, 100 1980, 140 2020
+                     L 140 2200"
+                  stroke="url(#pathGradient)"
+                  strokeWidth="85"
+                  fill="none"
+                  strokeLinecap="round"
+                  opacity="0.9"
+                  filter="url(#glow)"
+                  initial={{ pathLength: 0 }}
+                  animate={{ pathLength: 1 }}
+                  transition={{ duration: 2, ease: "easeInOut" }}
+                />
+              </svg>
+            </div>
+
+            {/* Lessons */}
+            <div className="relative flex flex-col gap-16" style={{ zIndex: 10 }}>
+              {lessons.map((lesson, index) => {
+                const isUnitStart = unitStarts.includes(index);
+                const unitNumber = unitStarts.indexOf(index) + 1;
+
+                return (
+                  <div key={lesson.id} className="relative">
+                    {isUnitStart && (
+                      <motion.div
+                        className="mb-10 text-center relative z-20"
+                        initial={{ opacity: 0, scale: 0.8 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        transition={{ delay: index * 0.05, type: "spring" }}
+                      >
+                        <div className="inline-flex items-center gap-3 bg-gradient-to-r from-blue-600 to-purple-600 rounded-2xl px-8 py-4 shadow-2xl border-4 border-slate-800">
+                          <Star className="w-6 h-6 text-yellow-400 fill-yellow-400" />
+                          <h2 className="text-2xl font-bold text-white">
+                            Unit {unitNumber}
+                          </h2>
+                          <Star className="w-6 h-6 text-yellow-400 fill-yellow-400" />
+                        </div>
+                      </motion.div>
+                    )}
+                    
+                    <LessonNode
+                      lesson={lesson}
+                      status={getLessonStatus(index)}
+                      position={positions[index % positions.length]}
+                      onClick={() => handleLessonClick(index)}
+                      index={index}
+                    />
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
