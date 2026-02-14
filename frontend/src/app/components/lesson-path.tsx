@@ -5,6 +5,8 @@ import { Confetti } from "./confetti";
 import { LessonCompleteModal } from "./lesson-complete-modal";
 import { Sidebar } from "./sidebar";
 import { PathDecorations } from "./path-decorations";
+import SublessonScreen from "./sublesson-screen1";
+import SublessonScreen2 from "./sublesson-screen2";
 import { Flame, Star, TrendingUp, Settings, Sparkles } from "lucide-react";
 import { Button } from "./ui/button";
 import { Progress } from "./ui/progress";
@@ -43,6 +45,25 @@ const lessons: Lesson[] = [
   { id: 19, title: "Final Test", description: "You did it!", type: 'achievement', xp: 100, unit: 4 },
 ];
 
+// Map lesson IDs to their sign language words/phrases and videos
+// Note: Paths are relative to the public folder
+const lessonContent: Record<number, { word: string; videoPath: string }> = {
+  1: { word: "Hello", videoPath: `${import.meta.env.BASE_URL}videos/lesson1-hello.mp4` },
+  2: { word: "Goodbye", videoPath: `${import.meta.env.BASE_URL}videos/lesson1-goodbye.mp4` },
+  3: { word: "Thank You", videoPath: `${import.meta.env.BASE_URL}videos/lesson1-thank-you.mp4` },
+  // Add more mappings as you create content for other lessons
+  // 4: { word: "Nice to Meet You", videoPath: `${import.meta.env.BASE_URL}videos/lesson1-nice-to-meet-you.mp4` },
+};
+
+// Map lesson IDs for quiz-style lessons (multiple choice)
+const quizContent: Record<number, { correctAnswer: string; wrongAnswers: string[]; videoPath: string }> = {
+  2: { 
+    correctAnswer: "Goodbye", 
+    wrongAnswers: ["Hello", "Thank You", "Please", "Sorry"],
+    videoPath: "/videos/lesson1-goodbye.mp4"
+  },
+};
+
 const positions: ('left' | 'center' | 'right')[] = [
   'center', 'right', 'left', 'center', 
   'left', 'right', 'center', 'left', 'center',
@@ -58,6 +79,11 @@ export function LessonPath() {
   const [currentLesson, setCurrentLesson] = useState<Lesson | null>(null);
   const [dailyGoal, setDailyGoal] = useState(0);
   const [streak, setStreak] = useState(3);
+  
+  // New state for SublessonScreen and Quiz
+  const [activeView, setActiveView] = useState<'path' | 'sublesson' | 'quiz'>('path');
+  const [currentSublesson, setCurrentSublesson] = useState<{ word: string; videoPath: string } | null>(null);
+  const [currentQuiz, setCurrentQuiz] = useState<{ correctAnswer: string; wrongAnswers: string[]; videoPath: string } | null>(null);
 
   const level = Math.floor(totalXP / 100) + 1;
   const xpForNextLevel = (level * 100) - totalXP;
@@ -66,15 +92,83 @@ export function LessonPath() {
   const handleLessonClick = useCallback((lessonId: number) => {
     const lesson = lessons[lessonId];
     setCurrentLesson(lesson);
-    setCompletedLessons((prev) => {
-      const newSet = new Set(prev);
-      newSet.add(lessonId);
-      return newSet;
-    });
-    setTotalXP((prev) => prev + lesson.xp);
-    setDailyGoal((prev) => prev + lesson.xp);
-    setShowConfetti(true);
-    setShowModal(true);
+    
+    // Check if this is a quiz lesson
+    const quiz = quizContent[lesson.id];
+    if (quiz) {
+      setCurrentQuiz(quiz);
+      setActiveView('quiz');
+      return;
+    }
+    
+    // Check if this lesson has video content (only for regular lessons, not checkpoints/achievements)
+    const content = lessonContent[lesson.id];
+    if (lesson.type === 'lesson' && content) {
+      // Start the video practice screen
+      setCurrentSublesson(content);
+      setActiveView('sublesson');
+    } else {
+      // For lessons without video or checkpoints/achievements, complete immediately
+      setCompletedLessons((prev) => {
+        const newSet = new Set(prev);
+        newSet.add(lessonId);
+        return newSet;
+      });
+      setTotalXP((prev) => prev + lesson.xp);
+      setDailyGoal((prev) => prev + lesson.xp);
+      setShowConfetti(true);
+      setShowModal(true);
+    }
+  }, []);
+
+  const handleSublessonComplete = useCallback(() => {
+    if (currentLesson) {
+      // Mark lesson as completed and award XP
+      setCompletedLessons((prev) => {
+        const newSet = new Set(prev);
+        newSet.add(lessons.findIndex(l => l.id === currentLesson.id));
+        return newSet;
+      });
+      setTotalXP((prev) => prev + currentLesson.xp);
+      setDailyGoal((prev) => prev + currentLesson.xp);
+      setShowConfetti(true);
+      setShowModal(true);
+    }
+    
+    // Return to main path
+    setActiveView('path');
+    setCurrentSublesson(null);
+  }, [currentLesson]);
+
+  const handleSublessonBack = useCallback(() => {
+    setActiveView('path');
+    setCurrentSublesson(null);
+    setCurrentLesson(null);
+  }, []);
+
+  const handleQuizComplete = useCallback(() => {
+    if (currentLesson) {
+      // Mark lesson as completed and award XP
+      setCompletedLessons((prev) => {
+        const newSet = new Set(prev);
+        newSet.add(lessons.findIndex(l => l.id === currentLesson.id));
+        return newSet;
+      });
+      setTotalXP((prev) => prev + currentLesson.xp);
+      setDailyGoal((prev) => prev + currentLesson.xp);
+      setShowConfetti(true);
+      setShowModal(true);
+    }
+    
+    // Return to main path
+    setActiveView('path');
+    setCurrentQuiz(null);
+  }, [currentLesson]);
+
+  const handleQuizBack = useCallback(() => {
+    setActiveView('path');
+    setCurrentQuiz(null);
+    setCurrentLesson(null);
   }, []);
 
   const getLessonStatus = (lessonId: number): 'locked' | 'unlocked' | 'completed' => {
@@ -84,6 +178,33 @@ export function LessonPath() {
     return previousCompleted ? 'unlocked' : 'locked';
   };
 
+  // If in quiz view, show SublessonScreen2 (Multiple Choice Quiz)
+  if (activeView === 'quiz' && currentQuiz && currentLesson) {
+    return (
+      <SublessonScreen2
+        wordPhrase={currentLesson.description}
+        videoPath={currentQuiz.videoPath}
+        correctAnswer={currentQuiz.correctAnswer}
+        wrongAnswers={currentQuiz.wrongAnswers}
+        onComplete={handleQuizComplete}
+        onBack={handleQuizBack}
+      />
+    );
+  }
+
+  // If in sublesson view, show SublessonScreen
+  if (activeView === 'sublesson' && currentSublesson && currentLesson) {
+    return (
+      <SublessonScreen
+        wordPhrase={currentSublesson.word}
+        videoPath={currentSublesson.videoPath}
+        onComplete={handleSublessonComplete}
+        onBack={handleSublessonBack}
+      />
+    );
+  }
+
+  // Otherwise, show the main lesson path
   const progress = (completedLessons.size / lessons.length) * 100;
   const dailyGoalProgress = Math.min((dailyGoal / 50) * 100, 100);
   const unitStarts = [0, 4, 9, 13];
