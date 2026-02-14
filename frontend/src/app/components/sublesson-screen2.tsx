@@ -6,7 +6,7 @@ interface MultipleChoiceQuizProps {
   videoPath: string;
   correctAnswer: string;
   wrongAnswers: string[];
-  onComplete: () => void;
+  onComplete: (wasCorrect: boolean) => void;
   onBack: () => void;
 }
 
@@ -22,6 +22,7 @@ export default function MultipleChoiceQuiz({
   const [selectedAnswer, setSelectedAnswer] = useState<string | null>(null);
   const [isCorrect, setIsCorrect] = useState<boolean | null>(null);
   const [hasAnswered, setHasAnswered] = useState(false);
+  const firstAttemptCorrect = useRef<boolean | null>(null);
   
   const videoRef = useRef<HTMLVideoElement>(null);
 
@@ -44,17 +45,21 @@ export default function MultipleChoiceQuiz({
   };
 
   const handleAnswerClick = (answer: string) => {
-    if (hasAnswered) return; // Don't allow changing answer
-    
+    if (hasAnswered) return;
+
     setSelectedAnswer(answer);
     const correct = answer === correctAnswer;
     setIsCorrect(correct);
     setHasAnswered(true);
-    
+
+    // Record first attempt only (retries don't change the mastery signal)
+    if (firstAttemptCorrect.current === null) {
+      firstAttemptCorrect.current = correct;
+    }
+
     if (correct) {
-      // Auto-complete after 1.5 seconds on correct answer
       setTimeout(() => {
-        onComplete();
+        onComplete(firstAttemptCorrect.current ?? true);
       }, 1500);
     }
   };

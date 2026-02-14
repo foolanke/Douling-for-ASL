@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef } from "react";
 import { motion } from "motion/react";
 import { LessonNode } from "./lesson-node";
 import { Confetti } from "./confetti";
@@ -7,6 +7,17 @@ import { Sidebar } from "./sidebar";
 import { PathDecorations } from "./path-decorations";
 import SublessonScreen from "./sublesson-screen1";
 import SublessonScreen2 from "./sublesson-screen2";
+import SublessonScreen3 from "./sublesson-screen3";
+import {
+  type LessonWord,
+  type LessonSlot,
+  type MasteryMap,
+  defaultWordStats,
+  generateSlots,
+  overrideSlot3,
+  overrideSlot5,
+  updateMastery,
+} from "../lib/lesson-algorithm";
 import { Flame, Star, TrendingUp, Settings, Sparkles } from "lucide-react";
 import { Button } from "./ui/button";
 import { Progress } from "./ui/progress";
@@ -21,7 +32,7 @@ interface Lesson {
 }
 
 const lessons: Lesson[] = [
-  { id: 1, title: "Lesson 1", description: "Welcome & Basics", type: 'lesson', xp: 10, unit: 1 },
+  { id: 1, title: "Lesson 1", description: "Greetings", type: 'lesson', xp: 10, unit: 1 },
   { id: 2, title: "Lesson 2", description: "Greetings", type: 'lesson', xp: 10, unit: 1 },
   { id: 3, title: "Lesson 3", description: "Common Phrases", type: 'lesson', xp: 15, unit: 1 },
   { id: 4, title: "Unit 1 Test", description: "Test your skills", type: 'checkpoint', xp: 25, unit: 1 },
@@ -45,23 +56,20 @@ const lessons: Lesson[] = [
   { id: 19, title: "Final Test", description: "You did it!", type: 'achievement', xp: 100, unit: 4 },
 ];
 
-// Map lesson IDs to their sign language words/phrases and videos
-// Note: Paths are relative to the public folder
-const lessonContent: Record<number, { word: string; videoPath: string }> = {
-  1: { word: "Hello", videoPath: `${import.meta.env.BASE_URL}videos/lesson1-hello.mp4` },
-  2: { word: "Goodbye", videoPath: `${import.meta.env.BASE_URL}videos/lesson1-goodbye.mp4` },
-  3: { word: "Thank You", videoPath: `${import.meta.env.BASE_URL}videos/lesson1-thank-you.mp4` },
-  // Add more mappings as you create content for other lessons
-  // 4: { word: "Nice to Meet You", videoPath: `${import.meta.env.BASE_URL}videos/lesson1-nice-to-meet-you.mp4` },
-};
-
-// Map lesson IDs for quiz-style lessons (multiple choice)
-const quizContent: Record<number, { correctAnswer: string; wrongAnswers: string[]; videoPath: string }> = {
-  2: { 
-    correctAnswer: "Goodbye", 
-    wrongAnswers: ["Hello", "Thank You", "Please", "Sorry"],
-    videoPath: "/videos/lesson1-goodbye.mp4"
-  },
+// Words for each lesson (keyed by lesson id)
+const lessonWords: Record<number, LessonWord[]> = {
+  1: [
+    { word: "Hello",   videoPath: `${import.meta.env.BASE_URL}videos/lesson1-hello.mp4`,   correctAnswer: "Hello",   wrongAnswers: ["Goodbye", "Thank You", "Please", "Sorry"] },
+    { word: "Goodbye", videoPath: `${import.meta.env.BASE_URL}videos/lesson1-goodbye.mp4`, correctAnswer: "Goodbye", wrongAnswers: ["Hello",   "Thank You", "Please", "Sorry"] },
+  ],
+  2: [
+    { word: "Please",   videoPath: `${import.meta.env.BASE_URL}videos/lesson2-please.mp4`,    correctAnswer: "Please",   wrongAnswers: ["Thank You", "Hello", "Sorry", "Goodbye"] },
+    { word: "Thank You", videoPath: `${import.meta.env.BASE_URL}videos/lesson2-thank-you.mp4`, correctAnswer: "Thank You", wrongAnswers: ["Please",    "Hello", "Sorry", "Goodbye"] },
+  ],
+  3: [
+    { word: "Nice To Meet You", videoPath: `${import.meta.env.BASE_URL}videos/lesson3-nice-to-meet-you.mp4`, correctAnswer: "Nice To Meet You", wrongAnswers: ["Sorry", "Hello", "Please", "Goodbye"] },
+    { word: "Sorry",            videoPath: `${import.meta.env.BASE_URL}videos/lesson3-sorry.mp4`,            correctAnswer: "Sorry",            wrongAnswers: ["Nice To Meet You", "Hello", "Please", "Goodbye"] },
+  ],
 };
 
 const positions: ('left' | 'center' | 'right')[] = [
@@ -80,94 +88,99 @@ export function LessonPath() {
   const [dailyGoal, setDailyGoal] = useState(0);
   const [streak, setStreak] = useState(3);
   
-  // New state for SublessonScreen and Quiz
-  const [activeView, setActiveView] = useState<'path' | 'sublesson' | 'quiz'>('path');
-  const [currentSublesson, setCurrentSublesson] = useState<{ word: string; videoPath: string } | null>(null);
-  const [currentQuiz, setCurrentQuiz] = useState<{ correctAnswer: string; wrongAnswers: string[]; videoPath: string } | null>(null);
+  // Slot-based lesson state
+  const [activeView, setActiveView] = useState<'path' | 'sublesson'>('path');
+  const [lessonSlots, setLessonSlots] = useState<LessonSlot[]>([]);
+  const [currentSlotIndex, setCurrentSlotIndex] = useState(0);
+  const masteryMap = useRef<MasteryMap>({});
+  // Track (word, wasCorrect) for each SS2 slot completed this session
+  const sessionResults = useRef<{ word: string; slotIndex: number; wasCorrect: boolean }[]>([]);
 
   const level = Math.floor(totalXP / 100) + 1;
   const xpForNextLevel = (level * 100) - totalXP;
   const levelProgress = (totalXP % 100);
 
-  const handleLessonClick = useCallback((lessonId: number) => {
-    const lesson = lessons[lessonId];
-    setCurrentLesson(lesson);
-    
-    // Check if this is a quiz lesson
-    const quiz = quizContent[lesson.id];
-    if (quiz) {
-      setCurrentQuiz(quiz);
-      setActiveView('quiz');
-      return;
-    }
-    
-    // Check if this lesson has video content (only for regular lessons, not checkpoints/achievements)
-    const content = lessonContent[lesson.id];
-    if (lesson.type === 'lesson' && content) {
-      // Start the video practice screen
-      setCurrentSublesson(content);
-      setActiveView('sublesson');
-    } else {
-      // For lessons without video or checkpoints/achievements, complete immediately
-      setCompletedLessons((prev) => {
-        const newSet = new Set(prev);
-        newSet.add(lessonId);
-        return newSet;
-      });
-      setTotalXP((prev) => prev + lesson.xp);
-      setDailyGoal((prev) => prev + lesson.xp);
-      setShowConfetti(true);
-      setShowModal(true);
-    }
-  }, []);
-
-  const handleSublessonComplete = useCallback(() => {
-    if (currentLesson) {
-      // Mark lesson as completed and award XP
-      setCompletedLessons((prev) => {
-        const newSet = new Set(prev);
-        newSet.add(lessons.findIndex(l => l.id === currentLesson.id));
-        return newSet;
-      });
-      setTotalXP((prev) => prev + currentLesson.xp);
-      setDailyGoal((prev) => prev + currentLesson.xp);
-      setShowConfetti(true);
-      setShowModal(true);
-    }
-    
-    // Return to main path
+  const completeLesson = useCallback((lessonIndex: number) => {
+    const lesson = lessons[lessonIndex];
+    setCompletedLessons((prev) => {
+      const newSet = new Set(prev);
+      newSet.add(lessonIndex);
+      return newSet;
+    });
+    setTotalXP((prev) => prev + lesson.xp);
+    setDailyGoal((prev) => prev + lesson.xp);
+    setShowConfetti(true);
+    setShowModal(true);
     setActiveView('path');
-    setCurrentSublesson(null);
-  }, [currentLesson]);
-
-  const handleSublessonBack = useCallback(() => {
-    setActiveView('path');
-    setCurrentSublesson(null);
+    setLessonSlots([]);
+    setCurrentSlotIndex(0);
+    sessionResults.current = [];
     setCurrentLesson(null);
   }, []);
 
-  const handleQuizComplete = useCallback(() => {
-    if (currentLesson) {
-      // Mark lesson as completed and award XP
-      setCompletedLessons((prev) => {
-        const newSet = new Set(prev);
-        newSet.add(lessons.findIndex(l => l.id === currentLesson.id));
-        return newSet;
-      });
-      setTotalXP((prev) => prev + currentLesson.xp);
-      setDailyGoal((prev) => prev + currentLesson.xp);
-      setShowConfetti(true);
-      setShowModal(true);
-    }
-    
-    // Return to main path
-    setActiveView('path');
-    setCurrentQuiz(null);
-  }, [currentLesson]);
+  const handleLessonClick = useCallback((lessonIndex: number) => {
+    const lesson = lessons[lessonIndex];
+    setCurrentLesson(lesson);
 
-  const handleQuizBack = useCallback(() => {
+    const words = lessonWords[lesson.id];
+    if (lesson.type === 'lesson' && words) {
+      // Ensure mastery entries exist for all words in this lesson
+      for (const w of words) {
+        if (!masteryMap.current[w.word]) {
+          masteryMap.current[w.word] = defaultWordStats();
+        }
+      }
+      sessionResults.current = [];
+      const slots = generateSlots(words, masteryMap.current);
+      setLessonSlots(slots);
+      setCurrentSlotIndex(0);
+      setActiveView('sublesson');
+    } else {
+      completeLesson(lessonIndex);
+    }
+  }, [completeLesson]);
+
+  // Unified handler: called when any sublesson screen completes
+  const handleSlotComplete = useCallback((wasCorrect?: boolean) => {
+    const slot = lessonSlots[currentSlotIndex];
+    if (!slot) return;
+
+    const words = lessonWords[currentLesson!.id];
+
+    // 1. Update mastery
+    masteryMap.current = updateMastery(masteryMap.current, slot, currentSlotIndex, wasCorrect);
+
+    // 2. Record SS2 result for session-level overrides
+    if (slot.type === 'ss2') {
+      sessionResults.current.push({ word: slot.word, slotIndex: currentSlotIndex, wasCorrect: wasCorrect ?? true });
+    }
+
+    // 3. Apply runtime overrides
+    let updatedSlots = lessonSlots;
+    if (currentSlotIndex === 1) {
+      // After slot 1 (first SS2): potentially override slot 3
+      updatedSlots = overrideSlot3(lessonSlots, words, slot.word, wasCorrect ?? true);
+      setLessonSlots(updatedSlots);
+    } else if (currentSlotIndex === 4) {
+      // After slot 4 (SS3): potentially override slot 5
+      updatedSlots = overrideSlot5(lessonSlots, words, sessionResults.current, masteryMap.current);
+      setLessonSlots(updatedSlots);
+    }
+
+    // 4. Advance
+    const nextIndex = currentSlotIndex + 1;
+    if (nextIndex < updatedSlots.length) {
+      setCurrentSlotIndex(nextIndex);
+    } else {
+      completeLesson(lessons.findIndex(l => l.id === currentLesson!.id));
+    }
+  }, [lessonSlots, currentSlotIndex, currentLesson, completeLesson]);
+
+  const handleBack = useCallback(() => {
     setActiveView('path');
-    setCurrentQuiz(null);
+    setLessonSlots([]);
+    setCurrentSlotIndex(0);
+    sessionResults.current = [];
     setCurrentLesson(null);
   }, []);
 
@@ -178,30 +191,44 @@ export function LessonPath() {
     return previousCompleted ? 'unlocked' : 'locked';
   };
 
-  // If in quiz view, show SublessonScreen2 (Multiple Choice Quiz)
-  if (activeView === 'quiz' && currentQuiz && currentLesson) {
-    return (
-      <SublessonScreen2
-        wordPhrase={currentLesson.description}
-        videoPath={currentQuiz.videoPath}
-        correctAnswer={currentQuiz.correctAnswer}
-        wrongAnswers={currentQuiz.wrongAnswers}
-        onComplete={handleQuizComplete}
-        onBack={handleQuizBack}
-      />
-    );
-  }
-
-  // If in sublesson view, show SublessonScreen
-  if (activeView === 'sublesson' && currentSublesson && currentLesson) {
-    return (
-      <SublessonScreen
-        wordPhrase={currentSublesson.word}
-        videoPath={currentSublesson.videoPath}
-        onComplete={handleSublessonComplete}
-        onBack={handleSublessonBack}
-      />
-    );
+  // Render active sublesson slot
+  if (activeView === 'sublesson' && lessonSlots.length > 0) {
+    const slot = lessonSlots[currentSlotIndex];
+    const slotKey = `${currentSlotIndex}-${slot.type}-${slot.word}`;
+    if (slot.type === 'ss1') {
+      return (
+        <SublessonScreen
+          key={slotKey}
+          wordPhrase={slot.word}
+          videoPath={slot.videoPath}
+          onComplete={() => handleSlotComplete()}
+          onBack={handleBack}
+        />
+      );
+    }
+    if (slot.type === 'ss2') {
+      return (
+        <SublessonScreen2
+          key={slotKey}
+          wordPhrase={slot.word}
+          videoPath={slot.videoPath}
+          correctAnswer={slot.correctAnswer}
+          wrongAnswers={slot.wrongAnswers}
+          onComplete={(wasCorrect) => handleSlotComplete(wasCorrect)}
+          onBack={handleBack}
+        />
+      );
+    }
+    if (slot.type === 'ss3') {
+      return (
+        <SublessonScreen3
+          key={slotKey}
+          wordPhrase={slot.word}
+          onComplete={() => handleSlotComplete()}
+          onBack={handleBack}
+        />
+      );
+    }
   }
 
   // Otherwise, show the main lesson path
