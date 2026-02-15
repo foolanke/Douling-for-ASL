@@ -1,8 +1,17 @@
 import { motion } from "motion/react";
 import { useState } from "react";
-import { Home, Settings, Target, Flame, Star, User, BookOpen, ChevronLeft, ChevronRight, X } from "lucide-react";
+import { Home, Settings, Target, Flame, Star, User, BookOpen, ChevronLeft, ChevronRight, X, Check } from "lucide-react";
 import { Button } from "./ui/button";
 import { Progress } from "./ui/progress";
+
+const AVATAR_GRADIENTS = [
+  { from: "from-blue-500", to: "to-purple-600", label: "Blue-Purple" },
+  { from: "from-green-500", to: "to-teal-600", label: "Green-Teal" },
+  { from: "from-pink-500", to: "to-rose-600", label: "Pink-Rose" },
+  { from: "from-orange-500", to: "to-red-600", label: "Orange-Red" },
+  { from: "from-cyan-500", to: "to-blue-600", label: "Cyan-Blue" },
+  { from: "from-violet-500", to: "to-indigo-600", label: "Violet-Indigo" },
+];
 
 interface SidebarProps {
   streak: number;
@@ -16,12 +25,40 @@ interface SidebarProps {
   dictionary: { word: string; videoPath: string }[];
 }
 
+function loadProfile() {
+  try {
+    const raw = localStorage.getItem("asl_profile");
+    if (raw) return JSON.parse(raw) as { name: string; avatarIndex: number };
+  } catch { /* ignore */ }
+  return { name: "Learner", avatarIndex: 0 };
+}
+
 export function Sidebar({ streak, level, totalXP, levelProgress, xpForNextLevel, dailyGoal, completedLessons, totalLessons, dictionary }: SidebarProps) {
   const dailyGoalProgress = Math.min((dailyGoal / 50) * 100, 100);
   const [dictIndex, setDictIndex] = useState(0);
   const [isDictOpen, setIsDictOpen] = useState(false);
   const [expandedCard, setExpandedCard] = useState<'level' | 'streak' | 'goal' | null>(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [settingsView, setSettingsView] = useState<'main' | 'editProfile'>('main');
+
+  // Profile state
+  const [profile, setProfile] = useState(loadProfile);
+  const [editName, setEditName] = useState(profile.name);
+  const [editAvatarIndex, setEditAvatarIndex] = useState(profile.avatarIndex);
+
+  const avatarGradient = AVATAR_GRADIENTS[profile.avatarIndex] || AVATAR_GRADIENTS[0];
+
+  function saveProfile(name: string, avatarIndex: number) {
+    const newProfile = { name: name.trim() || "Learner", avatarIndex };
+    localStorage.setItem("asl_profile", JSON.stringify(newProfile));
+    setProfile(newProfile);
+  }
+
+  function openEditProfile() {
+    setEditName(profile.name);
+    setEditAvatarIndex(profile.avatarIndex);
+    setSettingsView('editProfile');
+  }
 
   return (
     <>
@@ -37,11 +74,11 @@ export function Sidebar({ streak, level, totalXP, levelProgress, xpForNextLevel,
       {/* Profile */}
       <div className="p-6 border-b border-slate-800">
         <div className="flex flex-col items-center gap-3">
-          <div className="w-20 h-20 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center shadow-lg border-3 border-slate-700">
+          <div className={`w-20 h-20 bg-gradient-to-br ${avatarGradient.from} ${avatarGradient.to} rounded-full flex items-center justify-center shadow-lg border-3 border-slate-700`}>
             <User className="w-10 h-10 text-slate-100" />
           </div>
           <div className="text-center">
-            <h3 className="text-lg font-bold text-slate-100">Learner</h3>
+            <h3 className="text-lg font-bold text-slate-100">{profile.name}</h3>
             <p className="text-sm text-slate-400">Level {level} · {totalXP} XP</p>
           </div>
         </div>
@@ -231,73 +268,164 @@ export function Sidebar({ streak, level, totalXP, levelProgress, xpForNextLevel,
           animate={{ scale: 1, opacity: 1 }}
           transition={{ type: "spring", stiffness: 200, damping: 20 }}
         >
-          <div className="flex items-center justify-between mb-6 border-b border-slate-800 pb-4">
-            <div className="flex items-center gap-3">
-              <Settings className="w-7 h-7 text-blue-400" />
-              <h2 className="text-2xl font-bold text-slate-100">Settings</h2>
-            </div>
-            <button
-              onClick={() => setIsSettingsOpen(false)}
-              className="text-slate-500 hover:text-slate-100 transition p-1"
-            >
-              <X className="w-6 h-6" />
-            </button>
-          </div>
-
-          <div className="space-y-6">
-            <div>
-              <h3 className="text-lg font-semibold text-slate-100 mb-3 flex items-center gap-2">
-                <User className="w-5 h-5 text-blue-400" />
-                Account
-              </h3>
-              <div className="space-y-3 ml-7">
-                <div className="flex items-center justify-between p-3 bg-slate-800/40 rounded-lg hover:bg-slate-700 transition cursor-pointer">
-                  <span className="text-sm text-slate-300">Edit Profile</span>
-                  <ChevronRight className="w-4 h-4 text-slate-500" />
+          {settingsView === 'editProfile' ? (
+            <>
+              {/* Edit Profile Header */}
+              <div className="flex items-center justify-between mb-6 border-b border-slate-800 pb-4">
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={() => setSettingsView('main')}
+                    className="text-slate-400 hover:text-slate-100 transition p-1"
+                  >
+                    <ChevronLeft className="w-5 h-5" />
+                  </button>
+                  <h2 className="text-2xl font-bold text-slate-100">Edit Profile</h2>
                 </div>
-                <div className="flex items-center justify-between p-3 bg-slate-800/40 rounded-lg hover:bg-slate-700 transition cursor-pointer">
-                  <span className="text-sm text-slate-300">Change Password</span>
-                  <ChevronRight className="w-4 h-4 text-slate-500" />
+                <button
+                  onClick={() => { setIsSettingsOpen(false); setSettingsView('main'); }}
+                  className="text-slate-500 hover:text-slate-100 transition p-1"
+                >
+                  <X className="w-6 h-6" />
+                </button>
+              </div>
+
+              {/* Avatar Preview */}
+              <div className="flex flex-col items-center mb-8">
+                <div className={`w-24 h-24 bg-gradient-to-br ${(AVATAR_GRADIENTS[editAvatarIndex] || AVATAR_GRADIENTS[0]).from} ${(AVATAR_GRADIENTS[editAvatarIndex] || AVATAR_GRADIENTS[0]).to} rounded-full flex items-center justify-center shadow-lg border-3 border-slate-700 mb-3`}>
+                  <User className="w-12 h-12 text-slate-100" />
+                </div>
+                <p className="text-sm text-slate-400">Choose your avatar color</p>
+              </div>
+
+              {/* Avatar Color Picker */}
+              <div className="mb-6">
+                <label className="text-sm font-medium text-slate-300 mb-3 block">Avatar Color</label>
+                <div className="flex gap-3 flex-wrap">
+                  {AVATAR_GRADIENTS.map((g, i) => (
+                    <button
+                      key={i}
+                      onClick={() => setEditAvatarIndex(i)}
+                      className={`w-10 h-10 rounded-full bg-gradient-to-br ${g.from} ${g.to} transition-all ${
+                        editAvatarIndex === i
+                          ? 'ring-2 ring-white ring-offset-2 ring-offset-slate-900 scale-110'
+                          : 'hover:scale-105 opacity-70 hover:opacity-100'
+                      }`}
+                      title={g.label}
+                    >
+                      {editAvatarIndex === i && <Check className="w-5 h-5 text-white mx-auto" />}
+                    </button>
+                  ))}
                 </div>
               </div>
-            </div>
 
-            <div>
-              <h3 className="text-lg font-semibold text-slate-100 mb-3 flex items-center gap-2">
-                <Target className="w-5 h-5 text-blue-400" />
-                Learning Preferences
-              </h3>
-              <div className="space-y-3 ml-7">
-                <div className="flex items-center justify-between p-3 bg-slate-800/40 rounded-lg">
-                  <span className="text-sm text-slate-300">Daily Goal</span>
-                  <span className="text-sm text-blue-400 font-semibold">50 XP</span>
+              {/* Display Name */}
+              <div className="mb-8">
+                <label className="text-sm font-medium text-slate-300 mb-2 block">Display Name</label>
+                <input
+                  type="text"
+                  value={editName}
+                  onChange={(e) => setEditName(e.target.value)}
+                  maxLength={20}
+                  className="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-lg text-slate-100 text-sm focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition"
+                  placeholder="Enter your name"
+                />
+                <p className="text-xs text-slate-500 mt-1">{editName.length}/20 characters</p>
+              </div>
+
+              {/* Save / Cancel */}
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setSettingsView('main')}
+                  className="flex-1 px-4 py-3 rounded-lg border border-slate-700 text-slate-300 text-sm font-medium hover:bg-slate-800 transition"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => {
+                    saveProfile(editName, editAvatarIndex);
+                    setSettingsView('main');
+                  }}
+                  className="flex-1 px-4 py-3 rounded-lg bg-gradient-to-r from-blue-600 to-purple-600 text-white text-sm font-medium hover:from-blue-500 hover:to-purple-500 transition shadow-lg"
+                >
+                  Save Changes
+                </button>
+              </div>
+            </>
+          ) : (
+            <>
+              {/* Main Settings View */}
+              <div className="flex items-center justify-between mb-6 border-b border-slate-800 pb-4">
+                <div className="flex items-center gap-3">
+                  <Settings className="w-7 h-7 text-blue-400" />
+                  <h2 className="text-2xl font-bold text-slate-100">Settings</h2>
                 </div>
-                <div className="flex items-center justify-between p-3 bg-slate-800/40 rounded-lg">
-                  <span className="text-sm text-slate-300">Reminder Notifications</span>
-                  <div className="w-10 h-6 bg-blue-600 rounded-full relative cursor-pointer">
-                    <div className="absolute right-1 top-1 w-4 h-4 bg-white rounded-full"></div>
+                <button
+                  onClick={() => setIsSettingsOpen(false)}
+                  className="text-slate-500 hover:text-slate-100 transition p-1"
+                >
+                  <X className="w-6 h-6" />
+                </button>
+              </div>
+
+              <div className="space-y-6">
+                <div>
+                  <h3 className="text-lg font-semibold text-slate-100 mb-3 flex items-center gap-2">
+                    <User className="w-5 h-5 text-blue-400" />
+                    Account
+                  </h3>
+                  <div className="space-y-3 ml-7">
+                    <div
+                      className="flex items-center justify-between p-3 bg-slate-800/40 rounded-lg hover:bg-slate-700 transition cursor-pointer"
+                      onClick={openEditProfile}
+                    >
+                      <span className="text-sm text-slate-300">Edit Profile</span>
+                      <ChevronRight className="w-4 h-4 text-slate-500" />
+                    </div>
+                    <div className="flex items-center justify-between p-3 bg-slate-800/40 rounded-lg hover:bg-slate-700 transition cursor-pointer">
+                      <span className="text-sm text-slate-300">Change Password</span>
+                      <ChevronRight className="w-4 h-4 text-slate-500" />
+                    </div>
+                  </div>
+                </div>
+
+                <div>
+                  <h3 className="text-lg font-semibold text-slate-100 mb-3 flex items-center gap-2">
+                    <Target className="w-5 h-5 text-blue-400" />
+                    Learning Preferences
+                  </h3>
+                  <div className="space-y-3 ml-7">
+                    <div className="flex items-center justify-between p-3 bg-slate-800/40 rounded-lg">
+                      <span className="text-sm text-slate-300">Daily Goal</span>
+                      <span className="text-sm text-blue-400 font-semibold">50 XP</span>
+                    </div>
+                    <div className="flex items-center justify-between p-3 bg-slate-800/40 rounded-lg">
+                      <span className="text-sm text-slate-300">Reminder Notifications</span>
+                      <div className="w-10 h-6 bg-blue-600 rounded-full relative cursor-pointer">
+                        <div className="absolute right-1 top-1 w-4 h-4 bg-white rounded-full"></div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div>
+                  <h3 className="text-lg font-semibold text-slate-100 mb-3 flex items-center gap-2">
+                    <Settings className="w-5 h-5 text-slate-400" />
+                    Appearance
+                  </h3>
+                  <div className="space-y-3 ml-7">
+                    <div className="flex items-center justify-between p-3 bg-slate-800/40 rounded-lg hover:bg-slate-700 transition cursor-pointer">
+                      <span className="text-sm text-slate-300">Theme</span>
+                      <span className="text-sm text-slate-500">Dark</span>
+                    </div>
+                    <div className="flex items-center justify-between p-3 bg-slate-800/40 rounded-lg hover:bg-slate-700 transition cursor-pointer">
+                      <span className="text-sm text-slate-300">Language</span>
+                      <span className="text-sm text-slate-500">English</span>
+                    </div>
                   </div>
                 </div>
               </div>
-            </div>
-
-            <div>
-              <h3 className="text-lg font-semibold text-slate-100 mb-3 flex items-center gap-2">
-                <Settings className="w-5 h-5 text-slate-400" />
-                Appearance
-              </h3>
-              <div className="space-y-3 ml-7">
-                <div className="flex items-center justify-between p-3 bg-slate-800/40 rounded-lg hover:bg-slate-700 transition cursor-pointer">
-                  <span className="text-sm text-slate-300">Theme</span>
-                  <span className="text-sm text-slate-500">Dark</span>
-                </div>
-                <div className="flex items-center justify-between p-3 bg-slate-800/40 rounded-lg hover:bg-slate-700 transition cursor-pointer">
-                  <span className="text-sm text-slate-300">Language</span>
-                  <span className="text-sm text-slate-500">English</span>
-                </div>
-              </div>
-            </div>
-          </div>
+            </>
+          )}
         </motion.div>
       </div>
     )}
