@@ -10,11 +10,11 @@ export function Progress({ value = 0, className, ...props }: ProgressProps) {
 
   return (
     <div
-      className={cn("relative h-2 w-full overflow-hidden rounded-full bg-[#4A4A48]/30", className)}
+      className={cn("relative h-2 w-full overflow-hidden rounded-full bg-slate-700/50", className)}
       {...props}
     >
       <div
-        className="h-full bg-gradient-to-r from-[#566246] to-[#A4C2A5] transition-[width]"
+        className="h-full bg-gradient-to-r from-blue-500 to-purple-500 transition-[width]"
         style={{ width: `${clamped}%` }}
       />
     </div>

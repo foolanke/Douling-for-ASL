@@ -475,10 +475,10 @@ export function LessonPath() {
               <svg className="w-full h-full" viewBox="0 0 280 2200" preserveAspectRatio="xMidYMin meet">
                 <defs>
                   <linearGradient id="trailGradient" x1="0%" y1="0%" x2="0%" y2="100%">
-                    <stop offset="0%" stopColor="#566246" stopOpacity="0.4" />
-                    <stop offset="30%" stopColor="#6b7a55" stopOpacity="0.35" />
-                    <stop offset="60%" stopColor="#566246" stopOpacity="0.3" />
-                    <stop offset="100%" stopColor="#4A4A48" stopOpacity="0.35" />
+                    <stop offset="0%" stopColor="#6d28d9" stopOpacity="0.4" />
+                    <stop offset="30%" stopColor="#7c3aed" stopOpacity="0.35" />
+                    <stop offset="60%" stopColor="#6d28d9" stopOpacity="0.3" />
+                    <stop offset="100%" stopColor="#4c1d95" stopOpacity="0.35" />
                   </linearGradient>
 
                   <filter id="softGlow">
@@ -511,7 +511,7 @@ export function LessonPath() {
                      C 180 1820, 160 1860, 140 1900
                      C 120 1940, 100 1980, 140 2020
                      L 140 2200"
-                  stroke="#3a3a38"
+                  stroke="#1e1b4b"
                   strokeWidth="95"
                   fill="none"
                   strokeLinecap="round"
