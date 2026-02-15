@@ -1,6 +1,6 @@
 import { motion } from "motion/react";
 import { useState } from "react";
-import { Home, Settings, Target, Flame, Star, User, BookOpen, ChevronLeft, ChevronRight, X } from "lucide-react";
+import { Home, Settings, Target, Flame, Star, User, BookOpen, ChevronLeft, ChevronRight, X, Check, AlertTriangle, RotateCcw } from "lucide-react";
 import { Button } from "./ui/button";
 import { Progress } from "./ui/progress";
 import { AvatarPreview, DEFAULT_AVATAR } from "./avatar-preview";
@@ -35,12 +35,21 @@ function loadProfile(): { name: string; avatar: AvatarConfig } {
 }
 
 export function Sidebar({ streak, level, totalXP, levelProgress, xpForNextLevel, dailyGoal, completedLessons, totalLessons, dictionary }: SidebarProps) {
-  const dailyGoalProgress = Math.min((dailyGoal / 50) * 100, 100);
+  const [dailyGoalTarget, setLocalDailyGoalTarget] = useState(() => {
+    try {
+      const saved = localStorage.getItem("asl_dailyGoalTarget");
+      return saved ? parseInt(saved, 10) : 50;
+    } catch {
+      return 50;
+    }
+  });
+  const dailyGoalProgress = Math.min((dailyGoal / dailyGoalTarget) * 100, 100);
   const [dictIndex, setDictIndex] = useState(0);
   const [isDictOpen, setIsDictOpen] = useState(false);
   const [expandedCard, setExpandedCard] = useState<'level' | 'streak' | 'goal' | null>(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  const [settingsView, setSettingsView] = useState<'main' | 'editProfile'>('main');
+  const [settingsView, setSettingsView] = useState<'main' | 'editProfile' | 'editDailyGoal'>('main');
+  const [showResetConfirm, setShowResetConfirm] = useState(false);
 
   // Profile state
   const [profile, setProfile] = useState(loadProfile);
@@ -57,6 +66,18 @@ export function Sidebar({ streak, level, totalXP, levelProgress, xpForNextLevel,
     setEditName(profile.name);
     setEditAvatar(profile.avatar);
     setSettingsView('editProfile');
+  }
+
+  function resetProgress() {
+    // Clear all progress-related localStorage
+    localStorage.removeItem("asl_completedLessons");
+    localStorage.removeItem("asl_totalXP");
+    localStorage.removeItem("asl_dailyGoal");
+    localStorage.removeItem("asl_streak");
+    localStorage.removeItem("asl_masteryMap");
+
+    // Reload the page to reset state
+    window.location.reload();
   }
 
   return (
@@ -159,11 +180,11 @@ export function Sidebar({ streak, level, totalXP, levelProgress, xpForNextLevel,
               <Target className="w-6 h-6 text-blue-400" />
               <span className="text-base font-semibold text-slate-100">Daily Goal</span>
             </div>
-            <span className="text-sm font-bold text-blue-400">{dailyGoal} / 50 XP</span>
+            <span className="text-sm font-bold text-blue-400">{dailyGoal} / {dailyGoalTarget} XP</span>
           </div>
           <Progress value={dailyGoalProgress} className="h-2.5 mb-2" />
           <p className="text-sm text-slate-400">
-            {dailyGoal >= 50 ? "Daily goal reached!" : `${50 - dailyGoal} XP remaining`}
+            {dailyGoal >= dailyGoalTarget ? "Daily goal reached!" : `${dailyGoalTarget - dailyGoal} XP remaining`}
           </p>
         </motion.div>
       </div>
@@ -267,7 +288,80 @@ export function Sidebar({ streak, level, totalXP, levelProgress, xpForNextLevel,
           animate={{ scale: 1, opacity: 1 }}
           transition={{ type: "spring", stiffness: 200, damping: 20 }}
         >
-          {settingsView === 'editProfile' ? (
+          {settingsView === 'editDailyGoal' ? (
+            <>
+              {/* Edit Daily Goal Header */}
+              <div className="flex items-center justify-between mb-6 border-b border-slate-800 pb-4">
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={() => setSettingsView('main')}
+                    className="text-slate-400 hover:text-slate-100 transition p-1"
+                  >
+                    <ChevronLeft className="w-5 h-5" />
+                  </button>
+                  <h2 className="text-2xl font-bold text-slate-100">Daily Goal</h2>
+                </div>
+                <button
+                  onClick={() => { setIsSettingsOpen(false); setSettingsView('main'); }}
+                  className="text-slate-500 hover:text-slate-100 transition p-1"
+                >
+                  <X className="w-6 h-6" />
+                </button>
+              </div>
+
+              {/* Goal Options */}
+              <div className="mb-8">
+                <p className="text-sm text-slate-400 mb-4">Choose your daily XP goal</p>
+                <div className="space-y-3">
+                  {[10, 20, 30, 50, 75, 100].map((goal) => (
+                    <button
+                      key={goal}
+                      onClick={() => setLocalDailyGoalTarget(goal)}
+                      className={`w-full p-4 rounded-lg border transition-all ${
+                        dailyGoalTarget === goal
+                          ? 'bg-blue-600/20 border-blue-500 ring-2 ring-blue-500/50'
+                          : 'bg-slate-800/40 border-slate-700 hover:border-slate-600'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                          <Target className={`w-5 h-5 ${dailyGoalTarget === goal ? 'text-blue-400' : 'text-slate-500'}`} />
+                          <span className={`text-base font-semibold ${dailyGoalTarget === goal ? 'text-slate-100' : 'text-slate-300'}`}>
+                            {goal} XP
+                          </span>
+                        </div>
+                        {dailyGoalTarget === goal && (
+                          <Check className="w-5 h-5 text-blue-400" />
+                        )}
+                      </div>
+                      <p className={`text-xs mt-1 text-left ml-8 ${dailyGoalTarget === goal ? 'text-slate-400' : 'text-slate-500'}`}>
+                        {goal <= 20 ? 'Light practice' : goal <= 50 ? 'Regular practice' : 'Intensive practice'}
+                      </p>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Save / Cancel */}
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setSettingsView('main')}
+                  className="flex-1 px-4 py-3 rounded-lg border border-slate-700 text-slate-300 text-sm font-medium hover:bg-slate-800 transition"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => {
+                    localStorage.setItem("asl_dailyGoalTarget", dailyGoalTarget.toString());
+                    setSettingsView('main');
+                  }}
+                  className="flex-1 px-4 py-3 rounded-lg bg-gradient-to-r from-blue-600 to-purple-600 text-white text-sm font-medium hover:from-blue-500 hover:to-purple-500 transition shadow-lg"
+                >
+                  Save Changes
+                </button>
+              </div>
+            </>
+          ) : settingsView === 'editProfile' ? (
             <>
               {/* Edit Profile Header */}
               <div className="flex items-center justify-between mb-6 border-b border-slate-800 pb-4">
@@ -354,10 +448,6 @@ export function Sidebar({ streak, level, totalXP, levelProgress, xpForNextLevel,
                       <span className="text-sm text-slate-300">Edit Profile</span>
                       <ChevronRight className="w-4 h-4 text-slate-500" />
                     </div>
-                    <div className="flex items-center justify-between p-3 bg-slate-800/40 rounded-lg hover:bg-slate-700 transition cursor-pointer">
-                      <span className="text-sm text-slate-300">Change Password</span>
-                      <ChevronRight className="w-4 h-4 text-slate-500" />
-                    </div>
                   </div>
                 </div>
 
@@ -367,14 +457,14 @@ export function Sidebar({ streak, level, totalXP, levelProgress, xpForNextLevel,
                     Learning Preferences
                   </h3>
                   <div className="space-y-3 ml-7">
-                    <div className="flex items-center justify-between p-3 bg-slate-800/40 rounded-lg">
+                    <div
+                      className="flex items-center justify-between p-3 bg-slate-800/40 rounded-lg hover:bg-slate-700 transition cursor-pointer"
+                      onClick={() => setSettingsView('editDailyGoal')}
+                    >
                       <span className="text-sm text-slate-300">Daily Goal</span>
-                      <span className="text-sm text-blue-400 font-semibold">50 XP</span>
-                    </div>
-                    <div className="flex items-center justify-between p-3 bg-slate-800/40 rounded-lg">
-                      <span className="text-sm text-slate-300">Reminder Notifications</span>
-                      <div className="w-10 h-6 bg-blue-600 rounded-full relative cursor-pointer">
-                        <div className="absolute right-1 top-1 w-4 h-4 bg-white rounded-full"></div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm text-blue-400 font-semibold">{dailyGoalTarget} XP</span>
+                        <ChevronRight className="w-4 h-4 text-slate-500" />
                       </div>
                     </div>
                   </div>
@@ -382,17 +472,19 @@ export function Sidebar({ streak, level, totalXP, levelProgress, xpForNextLevel,
 
                 <div>
                   <h3 className="text-lg font-semibold text-slate-100 mb-3 flex items-center gap-2">
-                    <Settings className="w-5 h-5 text-slate-400" />
-                    Appearance
+                    <AlertTriangle className="w-5 h-5 text-orange-400" />
+                    Advanced
                   </h3>
                   <div className="space-y-3 ml-7">
-                    <div className="flex items-center justify-between p-3 bg-slate-800/40 rounded-lg hover:bg-slate-700 transition cursor-pointer">
-                      <span className="text-sm text-slate-300">Theme</span>
-                      <span className="text-sm text-slate-500">Dark</span>
-                    </div>
-                    <div className="flex items-center justify-between p-3 bg-slate-800/40 rounded-lg hover:bg-slate-700 transition cursor-pointer">
-                      <span className="text-sm text-slate-300">Language</span>
-                      <span className="text-sm text-slate-500">English</span>
+                    <div
+                      className="flex items-center justify-between p-3 bg-red-500/10 border border-red-500/20 rounded-lg hover:bg-red-500/20 transition cursor-pointer"
+                      onClick={() => setShowResetConfirm(true)}
+                    >
+                      <div className="flex items-center gap-2">
+                        <RotateCcw className="w-4 h-4 text-red-400" />
+                        <span className="text-sm text-red-400 font-medium">Reset Progress</span>
+                      </div>
+                      <ChevronRight className="w-4 h-4 text-red-400" />
                     </div>
                   </div>
                 </div>
@@ -458,15 +550,55 @@ export function Sidebar({ streak, level, totalXP, levelProgress, xpForNextLevel,
             <div className="text-center">
               <Target className="w-16 h-16 text-blue-400 mx-auto mb-4" />
               <h2 className="text-3xl font-bold text-slate-100 mb-2">Daily Goal</h2>
-              <p className="text-lg text-slate-400 mb-6">{dailyGoal} / 50 XP today</p>
+              <p className="text-lg text-slate-400 mb-6">{dailyGoal} / {dailyGoalTarget} XP today</p>
               <Progress value={dailyGoalProgress} className="h-4 mb-3" />
               <p className="text-sm text-slate-400">
-                {dailyGoal >= 50
+                {dailyGoal >= dailyGoalTarget
                   ? "Daily goal reached! Well done!"
-                  : `${50 - dailyGoal} XP remaining — keep going!`}
+                  : `${dailyGoalTarget - dailyGoal} XP remaining — keep going!`}
               </p>
             </div>
           )}
+        </motion.div>
+      </div>
+    )}
+
+    {/* Reset Confirmation Modal */}
+    {showResetConfirm && (
+      <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+        <motion.div
+          className="bg-slate-900 rounded-2xl border border-red-500/30 shadow-2xl w-full max-w-md p-8"
+          initial={{ scale: 0.9, opacity: 0 }}
+          animate={{ scale: 1, opacity: 1 }}
+          transition={{ type: "spring", stiffness: 200, damping: 20 }}
+        >
+          <div className="flex flex-col items-center text-center">
+            <div className="w-16 h-16 bg-red-500/20 rounded-full flex items-center justify-center mb-4">
+              <AlertTriangle className="w-8 h-8 text-red-400" />
+            </div>
+            <h2 className="text-2xl font-bold text-slate-100 mb-2">Reset All Progress?</h2>
+            <p className="text-slate-400 mb-6">
+              This will permanently delete all your progress, including completed lessons, XP, streak, and mastery data. This action cannot be undone.
+            </p>
+
+            <div className="flex gap-3 w-full">
+              <button
+                onClick={() => setShowResetConfirm(false)}
+                className="flex-1 px-4 py-3 rounded-lg border border-slate-700 text-slate-300 text-sm font-medium hover:bg-slate-800 transition"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  setShowResetConfirm(false);
+                  resetProgress();
+                }}
+                className="flex-1 px-4 py-3 rounded-lg bg-red-600 text-white text-sm font-medium hover:bg-red-500 transition shadow-lg"
+              >
+                Reset Everything
+              </button>
+            </div>
+          </div>
         </motion.div>
       </div>
     )}
