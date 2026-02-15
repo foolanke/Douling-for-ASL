@@ -71,12 +71,12 @@ export default function MultipleChoiceQuiz({
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-gray-900 via-purple-900 to-gray-900 text-white">
+    <div className="min-h-screen bg-gradient-to-b from-[#3a3a38] via-[#4A4A48] to-[#3a3a38] text-[#F1F2EB]">
       {/* Header */}
       <div className="flex items-center justify-between p-6">
         <button 
           onClick={onBack}
-          className="flex items-center gap-2 text-purple-300 hover:text-white transition"
+          className="flex items-center gap-2 text-[#A4C2A5] hover:text-[#F1F2EB] transition"
         >
           <ArrowLeft size={24} />
           <span>Back</span>
@@ -88,13 +88,13 @@ export default function MultipleChoiceQuiz({
       <div className="max-w-4xl mx-auto px-6 pb-12">
         {/* Title */}
         <div className="text-center mb-8">
-          <h2 className="text-4xl font-bold text-purple-300 mb-2">What sign is this?</h2>
-          <p className="text-gray-300">Watch the video and select the correct answer</p>
+          <h2 className="text-4xl font-bold text-[#A4C2A5] mb-2">What sign is this?</h2>
+          <p className="text-[#D8DAD3]/70">Watch the video and select the correct answer</p>
         </div>
 
         {/* Video Section */}
         <div className="mb-8">
-          <div className="relative bg-gray-800 rounded-2xl overflow-hidden shadow-2xl max-w-2xl mx-auto">
+          <div className="relative bg-[#3a3a38] rounded-2xl overflow-hidden shadow-2xl max-w-2xl mx-auto">
             <video
               ref={videoRef}
               src={videoPath}
@@ -121,13 +121,13 @@ export default function MultipleChoiceQuiz({
             let buttonClass = "w-full px-6 py-4 rounded-xl font-semibold text-lg transition shadow-lg flex items-center justify-between ";
             
             if (showCorrect) {
-              buttonClass += "bg-green-600 text-white border-2 border-green-400";
+              buttonClass += "bg-[#566246] text-white border-2 border-[#A4C2A5]";
             } else if (showWrong) {
               buttonClass += "bg-red-600 text-white border-2 border-red-400";
             } else if (isSelected) {
-              buttonClass += "bg-purple-600 text-white border-2 border-purple-400";
+              buttonClass += "bg-[#566246] text-white border-2 border-[#A4C2A5]";
             } else {
-              buttonClass += "bg-gray-700 hover:bg-gray-600 text-white border-2 border-transparent";
+              buttonClass += "bg-[#4A4A48] hover:bg-[#566246] text-white border-2 border-transparent";
             }
             
             if (hasAnswered) {
@@ -155,19 +155,19 @@ export default function MultipleChoiceQuiz({
         {hasAnswered && (
           <div className="mt-8 max-w-2xl mx-auto">
             {isCorrect ? (
-              <div className="bg-green-900 bg-opacity-30 border border-green-600 rounded-xl p-6 text-center">
-                <CheckCircle className="w-16 h-16 text-green-400 mx-auto mb-3" />
-                <h3 className="text-2xl font-bold text-green-300 mb-2">Correct! 🎉</h3>
-                <p className="text-gray-300">Great job! Moving to next lesson...</p>
+              <div className="bg-[#566246]/20 border border-[#A4C2A5]/40 rounded-xl p-6 text-center">
+                <CheckCircle className="w-16 h-16 text-[#A4C2A5] mx-auto mb-3" />
+                <h3 className="text-2xl font-bold text-[#A4C2A5] mb-2">Correct! 🎉</h3>
+                <p className="text-[#D8DAD3]/70">Great job! Moving to next lesson...</p>
               </div>
             ) : (
-              <div className="bg-red-900 bg-opacity-30 border border-red-600 rounded-xl p-6 text-center">
+              <div className="bg-red-900/20 border border-red-600/40 rounded-xl p-6 text-center">
                 <X className="w-16 h-16 text-red-400 mx-auto mb-3" />
                 <h3 className="text-2xl font-bold text-red-300 mb-2">Not quite!</h3>
-                <p className="text-gray-300 mb-4">The correct answer is "{correctAnswer}"</p>
+                <p className="text-[#D8DAD3]/70 mb-4">The correct answer is "{correctAnswer}"</p>
                 <button
                   onClick={handleTryAgain}
-                  className="bg-purple-600 hover:bg-purple-700 text-white px-6 py-3 rounded-xl font-semibold transition shadow-lg"
+                  className="bg-[#566246] hover:bg-[#4A4A48] text-white px-6 py-3 rounded-xl font-semibold transition shadow-lg"
                 >
                   Try Again
                 </button>
@@ -177,9 +177,9 @@ export default function MultipleChoiceQuiz({
         )}
 
         {/* Instructions */}
-        <div className="mt-12 bg-purple-900 bg-opacity-30 rounded-2xl p-6 border border-purple-700 max-w-2xl mx-auto">
-          <h4 className="font-semibold text-lg mb-3 text-purple-200">💡 Tip:</h4>
-          <p className="text-gray-300">You can replay the video as many times as you need before selecting your answer!</p>
+        <div className="mt-12 bg-[#566246]/15 rounded-2xl p-6 border border-[#A4C2A5]/20 max-w-2xl mx-auto">
+          <h4 className="font-semibold text-lg mb-3 text-[#D8DAD3]">💡 Tip:</h4>
+          <p className="text-[#D8DAD3]/70">You can replay the video as many times as you need before selecting your answer!</p>
         </div>
       </div>
     </div>

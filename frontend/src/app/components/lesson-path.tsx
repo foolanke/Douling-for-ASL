@@ -20,9 +20,7 @@ import {
   overrideUnitTestAfterMiss,
   updateMastery,
 } from "../lib/lesson-algorithm";
-import { Flame, Star, TrendingUp, Settings, Sparkles } from "lucide-react";
-import { Button } from "./ui/button";
-import { Progress } from "./ui/progress";
+import { Leaf, TreePine } from "lucide-react";
 
 interface Lesson {
   id: number;
@@ -38,18 +36,18 @@ const lessons: Lesson[] = [
   { id: 2, title: "Lesson 2", description: "Polite Expressions", type: 'lesson', xp: 10, unit: 1 },
   { id: 3, title: "Lesson 3", description: "Politeness Markers", type: 'lesson', xp: 15, unit: 1 },
   { id: 4, title: "Unit 1 Test", description: "Test your skills", type: 'checkpoint', xp: 25, unit: 1 },
-  
+
   { id: 5, title: "Lesson 4", description: "Numbers & Counting", type: 'lesson', xp: 15, unit: 2 },
   { id: 6, title: "Lesson 5", description: "Colors", type: 'lesson', xp: 15, unit: 2 },
   { id: 7, title: "Lesson 6", description: "Food & Drinks", type: 'lesson', xp: 20, unit: 2 },
   { id: 8, title: "Lesson 7", description: "Animals", type: 'lesson', xp: 20, unit: 2 },
   { id: 9, title: "Unit Master", description: "Unit 2 Complete!", type: 'achievement', xp: 50, unit: 2 },
-  
+
   { id: 10, title: "Lesson 8", description: "Family Members", type: 'lesson', xp: 20, unit: 3 },
   { id: 11, title: "Lesson 9", description: "Body Parts", type: 'lesson', xp: 20, unit: 3 },
   { id: 12, title: "Lesson 10", description: "Emotions", type: 'lesson', xp: 25, unit: 3 },
   { id: 13, title: "Unit 3 Test", description: "Checkpoint", type: 'checkpoint', xp: 30, unit: 3 },
-  
+
   { id: 14, title: "Lesson 11", description: "Places & Locations", type: 'lesson', xp: 25, unit: 4 },
   { id: 15, title: "Lesson 12", description: "Travel", type: 'lesson', xp: 25, unit: 4 },
   { id: 16, title: "Lesson 13", description: "Shopping", type: 'lesson', xp: 30, unit: 4 },
@@ -83,7 +81,7 @@ const unitLessons: Record<number, number[]> = {
 };
 
 const positions: ('left' | 'center' | 'right')[] = [
-  'center', 'right', 'left', 'center', 
+  'center', 'right', 'left', 'center',
   'left', 'right', 'center', 'left', 'center',
   'right', 'left', 'center', 'center',
   'left', 'right', 'center', 'left', 'right', 'center'
@@ -97,7 +95,7 @@ export function LessonPath() {
   const [currentLesson, setCurrentLesson] = useState<Lesson | null>(null);
   const [dailyGoal, setDailyGoal] = useState(0);
   const [streak, setStreak] = useState(3);
-  
+
   // Slot-based lesson state
   const [activeView, setActiveView] = useState<'path' | 'sublesson'>('path');
   const [lessonSlots, setLessonSlots] = useState<LessonSlot[]>([]);
@@ -271,7 +269,7 @@ export function LessonPath() {
   const unitStarts = [0, 4, 9, 13];
 
   return (
-    <div className="flex h-screen bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 overflow-hidden">
+    <div className="flex h-screen bg-gradient-to-b from-[#3a3a38] via-[#4A4A48] to-[#3a3a38] overflow-hidden">
       {/* Sidebar */}
       <Sidebar
         streak={streak}
@@ -288,7 +286,7 @@ export function LessonPath() {
       {/* Main Content Area */}
       <div className="flex-1 ml-80 flex flex-col h-screen relative">
         <Confetti show={showConfetti} onComplete={() => setShowConfetti(false)} />
-        
+
         {currentLesson && (
           <LessonCompleteModal
             isOpen={showModal}
@@ -300,40 +298,47 @@ export function LessonPath() {
 
         {/* Floating Logo */}
         <motion.div
-          className="absolute top-6 left-8 z-30 flex items-center gap-3 bg-slate-900/60 backdrop-blur-xl px-5 py-3 rounded-2xl shadow-2xl border border-slate-700/50"
+          className="absolute top-6 left-8 z-30 flex items-center gap-3 bg-[#3a3a38]/80 backdrop-blur-xl px-5 py-3 rounded-2xl shadow-2xl border border-[#566246]/30"
           initial={{ y: -100, opacity: 0 }}
           animate={{ y: 0, opacity: 1 }}
           transition={{ type: "spring", stiffness: 100 }}
         >
-          <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-purple-600 rounded-xl flex items-center justify-center shadow-lg">
-            <Sparkles className="w-6 h-6 text-white" />
+          <div className="w-10 h-10 bg-gradient-to-br from-[#566246] to-[#A4C2A5] rounded-xl flex items-center justify-center shadow-lg">
+            <Leaf className="w-6 h-6 text-[#F1F2EB]" />
           </div>
-          <h1 className="text-2xl font-bold bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">
-            LearnQuest
+          <h1 className="text-2xl font-bold text-[#A4C2A5]">
+            Douling
           </h1>
         </motion.div>
 
         {/* Scrollable Path Area */}
         <div className="flex-1 overflow-y-auto overflow-x-hidden relative">
           <PathDecorations totalLessons={lessons.length} />
-          
+
           <div className="relative max-w-2xl mx-auto py-16 px-8">
-            {/* Cartoon Path Background - Fixed size */}
+            {/* Forest Trail Path */}
             <div className="absolute left-1/2 top-0 bottom-0 -translate-x-1/2 w-[280px]" style={{ zIndex: 1 }}>
-              <svg 
+              <svg
                 className="w-full h-full"
                 viewBox="0 0 280 2200"
                 preserveAspectRatio="xMidYMin meet"
               >
                 <defs>
-                  <linearGradient id="pathGradient" x1="0%" y1="0%" x2="0%" y2="100%">
-                    <stop offset="0%" stopColor="#1e40af" stopOpacity="0.5" />
-                    <stop offset="50%" stopColor="#7c3aed" stopOpacity="0.4" />
-                    <stop offset="100%" stopColor="#db2777" stopOpacity="0.5" />
+                  <linearGradient id="trailGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+                    <stop offset="0%" stopColor="#566246" stopOpacity="0.4" />
+                    <stop offset="30%" stopColor="#6b7a55" stopOpacity="0.35" />
+                    <stop offset="60%" stopColor="#566246" stopOpacity="0.3" />
+                    <stop offset="100%" stopColor="#4A4A48" stopOpacity="0.35" />
                   </linearGradient>
-                  
-                  <filter id="glow">
-                    <feGaussianBlur stdDeviation="4" result="coloredBlur"/>
+
+                  {/* Subtle texture filter */}
+                  <filter id="trailTexture">
+                    <feTurbulence type="fractalNoise" baseFrequency="0.04" numOctaves="3" result="noise"/>
+                    <feDisplacementMap in="SourceGraphic" in2="noise" scale="3" />
+                  </filter>
+
+                  <filter id="softGlow">
+                    <feGaussianBlur stdDeviation="3" result="coloredBlur"/>
                     <feMerge>
                       <feMergeNode in="coloredBlur"/>
                       <feMergeNode in="SourceGraphic"/>
@@ -341,9 +346,9 @@ export function LessonPath() {
                   </filter>
                 </defs>
 
-                {/* Shadow path */}
+                {/* Shadow/ground layer */}
                 <motion.path
-                  d="M 140 0 
+                  d="M 140 0
                      C 140 50, 160 80, 180 100
                      C 200 120, 180 160, 140 180
                      C 100 200, 80 240, 100 280
@@ -363,19 +368,19 @@ export function LessonPath() {
                      C 180 1820, 160 1860, 140 1900
                      C 120 1940, 100 1980, 140 2020
                      L 140 2200"
-                  stroke="#0f172a"
+                  stroke="#3a3a38"
                   strokeWidth="95"
                   fill="none"
                   strokeLinecap="round"
-                  opacity="0.7"
+                  opacity="0.8"
                   initial={{ pathLength: 0 }}
                   animate={{ pathLength: 1 }}
                   transition={{ duration: 2, ease: "easeInOut" }}
                 />
 
-                {/* Main glowing path */}
+                {/* Main trail */}
                 <motion.path
-                  d="M 140 0 
+                  d="M 140 0
                      C 140 50, 160 80, 180 100
                      C 200 120, 180 160, 140 180
                      C 100 200, 80 240, 100 280
@@ -395,15 +400,48 @@ export function LessonPath() {
                      C 180 1820, 160 1860, 140 1900
                      C 120 1940, 100 1980, 140 2020
                      L 140 2200"
-                  stroke="url(#pathGradient)"
+                  stroke="url(#trailGradient)"
                   strokeWidth="85"
                   fill="none"
                   strokeLinecap="round"
                   opacity="0.9"
-                  filter="url(#glow)"
+                  filter="url(#softGlow)"
                   initial={{ pathLength: 0 }}
                   animate={{ pathLength: 1 }}
                   transition={{ duration: 2, ease: "easeInOut" }}
+                />
+
+                {/* Dashed center line — like a forest trail marking */}
+                <motion.path
+                  d="M 140 0
+                     C 140 50, 160 80, 180 100
+                     C 200 120, 180 160, 140 180
+                     C 100 200, 80 240, 100 280
+                     C 120 320, 160 320, 180 360
+                     C 200 400, 180 440, 140 460
+                     C 100 480, 60 520, 80 580
+                     C 100 640, 160 660, 180 700
+                     C 200 740, 180 780, 140 820
+                     C 100 860, 80 900, 100 940
+                     C 120 980, 160 1000, 180 1040
+                     C 200 1080, 180 1120, 140 1160
+                     C 100 1200, 60 1240, 100 1300
+                     C 140 1360, 200 1360, 200 1420
+                     C 200 1480, 160 1520, 140 1560
+                     C 120 1600, 100 1640, 120 1680
+                     C 140 1720, 180 1740, 180 1780
+                     C 180 1820, 160 1860, 140 1900
+                     C 120 1940, 100 1980, 140 2020
+                     L 140 2200"
+                  stroke="#A4C2A5"
+                  strokeWidth="2"
+                  fill="none"
+                  strokeLinecap="round"
+                  strokeDasharray="8 16"
+                  opacity="0.15"
+                  initial={{ pathLength: 0 }}
+                  animate={{ pathLength: 1 }}
+                  transition={{ duration: 2.5, ease: "easeInOut" }}
                 />
               </svg>
             </div>
@@ -423,16 +461,16 @@ export function LessonPath() {
                         animate={{ opacity: 1, scale: 1 }}
                         transition={{ delay: index * 0.05, type: "spring" }}
                       >
-                        <div className="inline-flex items-center gap-3 bg-gradient-to-r from-blue-600 to-purple-600 rounded-2xl px-8 py-4 shadow-2xl border-4 border-slate-800">
-                          <Star className="w-6 h-6 text-yellow-400 fill-yellow-400" />
-                          <h2 className="text-2xl font-bold text-white">
+                        <div className="inline-flex items-center gap-3 bg-gradient-to-r from-[#566246] to-[#6b7a55] rounded-2xl px-8 py-4 shadow-2xl border-4 border-[#4A4A48]/50">
+                          <TreePine className="w-6 h-6 text-[#A4C2A5]" />
+                          <h2 className="text-2xl font-bold text-[#F1F2EB]">
                             Unit {unitNumber}
                           </h2>
-                          <Star className="w-6 h-6 text-yellow-400 fill-yellow-400" />
+                          <TreePine className="w-6 h-6 text-[#A4C2A5]" />
                         </div>
                       </motion.div>
                     )}
-                    
+
                     <LessonNode
                       lesson={lesson}
                       status={getLessonStatus(index)}

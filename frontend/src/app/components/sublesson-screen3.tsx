@@ -196,12 +196,12 @@ export default function SublessonScreen3({
   }, []);
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-gray-900 via-purple-900 to-gray-900 text-white">
+    <div className="min-h-screen bg-gradient-to-b from-[#3a3a38] via-[#4A4A48] to-[#3a3a38] text-[#F1F2EB]">
       {/* Header */}
       <div className="flex items-center justify-between p-6">
         <button 
           onClick={onBack}
-          className="flex items-center gap-2 text-purple-300 hover:text-white transition"
+          className="flex items-center gap-2 text-[#A4C2A5] hover:text-[#F1F2EB] transition"
         >
           <ArrowLeft size={24} />
           <span>Back</span>
@@ -214,15 +214,15 @@ export default function SublessonScreen3({
         <div className="grid md:grid-cols-2 gap-8">
           {/* Instructions Section (replaces example video) */}
           <div className="space-y-4">
-            <h3 className="text-xl font-semibold text-purple-200 flex items-center gap-2">
-              <span className="bg-purple-600 rounded-full w-8 h-8 flex items-center justify-center text-sm">1</span>
+            <h3 className="text-xl font-semibold text-[#D8DAD3] flex items-center gap-2">
+              <span className="bg-[#566246] rounded-full w-8 h-8 flex items-center justify-center text-sm">1</span>
               Remember
             </h3>
-            <div className="bg-gray-800 rounded-2xl p-8 shadow-2xl aspect-video flex flex-col items-center justify-center">
+            <div className="bg-[#3a3a38] rounded-2xl p-8 shadow-2xl aspect-video flex flex-col items-center justify-center">
               <div className="text-center">
                 <div className="text-6xl mb-4">🤔</div>
-                <h4 className="text-2xl font-bold text-purple-300 mb-3">Think back!</h4>
-                <p className="text-gray-300 text-lg">How do you sign:</p>
+                <h4 className="text-2xl font-bold text-[#A4C2A5] mb-3">Think back!</h4>
+                <p className="text-[#D8DAD3]/70 text-lg">How do you sign:</p>
                 <p className="text-4xl font-bold text-white mt-2">"{wordPhrase}"</p>
               </div>
             </div>
@@ -230,18 +230,18 @@ export default function SublessonScreen3({
 
           {/* User Recording Section */}
           <div className="space-y-4">
-            <h3 className="text-xl font-semibold text-purple-200 flex items-center gap-2">
-              <span className="bg-purple-600 rounded-full w-8 h-8 flex items-center justify-center text-sm">2</span>
+            <h3 className="text-xl font-semibold text-[#D8DAD3] flex items-center gap-2">
+              <span className="bg-[#566246] rounded-full w-8 h-8 flex items-center justify-center text-sm">2</span>
               Your Turn
             </h3>
             
             {!stream && !hasRecorded && (
-              <div className="bg-gray-800 rounded-2xl p-12 text-center shadow-2xl aspect-video flex flex-col items-center justify-center">
-                <Video className="w-16 h-16 text-purple-400 mb-4" />
-                <p className="text-gray-400 mb-6">Ready to practice?</p>
+              <div className="bg-[#3a3a38] rounded-2xl p-12 text-center shadow-2xl aspect-video flex flex-col items-center justify-center">
+                <Video className="w-16 h-16 text-[#A4C2A5] mb-4" />
+                <p className="text-[#D8DAD3]/50 mb-6">Ready to practice?</p>
                 <button
                   onClick={startCamera}
-                  className="bg-purple-600 hover:bg-purple-700 text-white px-8 py-3 rounded-full font-semibold transition shadow-lg"
+                  className="bg-[#566246] hover:bg-[#4A4A48] text-white px-8 py-3 rounded-full font-semibold transition shadow-lg"
                 >
                   Start Camera
                 </button>
@@ -250,7 +250,7 @@ export default function SublessonScreen3({
 
           {stream && !hasRecorded && (
             <div className="space-y-4">
-              <div className="relative bg-gray-800 rounded-2xl overflow-hidden shadow-2xl">
+              <div className="relative bg-[#3a3a38] rounded-2xl overflow-hidden shadow-2xl">
                 <video
                   ref={userVideoRef}
                   autoPlay
@@ -287,14 +287,14 @@ export default function SublessonScreen3({
                 ) : (
                   <button
                     onClick={stopRecording}
-                    className="flex-1 bg-gray-700 hover:bg-gray-600 text-white px-6 py-4 rounded-xl font-semibold transition shadow-lg"
+                    className="flex-1 bg-[#4A4A48] hover:bg-[#566246] text-white px-6 py-4 rounded-xl font-semibold transition shadow-lg"
                   >
                     Stop Recording
                   </button>
                 )}
                 <button
                   onClick={stopCamera}
-                  className="px-6 py-4 bg-gray-700 hover:bg-gray-600 rounded-xl transition"
+                  className="px-6 py-4 bg-[#4A4A48] hover:bg-[#566246] rounded-xl transition"
                 >
                   Cancel
                 </button>
@@ -304,7 +304,7 @@ export default function SublessonScreen3({
 
           {hasRecorded && (
             <div className="space-y-4">
-              <div className="relative bg-gray-800 rounded-2xl overflow-hidden shadow-2xl">
+              <div className="relative bg-[#3a3a38] rounded-2xl overflow-hidden shadow-2xl">
                 <video
                   ref={recordedVideoRef}
                   controls
@@ -325,23 +325,23 @@ export default function SublessonScreen3({
               </div>
               
               {reRecordCount >= 1 ? (
-                <div className="bg-green-900 bg-opacity-30 border border-green-600 rounded-xl p-6 text-center">
-                  <CheckCircle className="w-12 h-12 text-green-400 mx-auto mb-3" />
-                  <h3 className="text-xl font-semibold text-green-300 mb-2">Great job!</h3>
-                  <p className="text-gray-300">Completing lesson...</p>
+                <div className="bg-[#566246]/20 border border-[#A4C2A5]/40 rounded-xl p-6 text-center">
+                  <CheckCircle className="w-12 h-12 text-[#A4C2A5] mx-auto mb-3" />
+                  <h3 className="text-xl font-semibold text-[#A4C2A5] mb-2">Great job!</h3>
+                  <p className="text-[#D8DAD3]/70">Completing lesson...</p>
                 </div>
               ) : (
                 <div className="flex gap-3">
                   <button
                     onClick={resetRecording}
-                    className="flex-1 bg-gray-700 hover:bg-gray-600 text-white px-6 py-4 rounded-xl font-semibold transition shadow-lg flex items-center justify-center gap-2"
+                    className="flex-1 bg-[#4A4A48] hover:bg-[#566246] text-white px-6 py-4 rounded-xl font-semibold transition shadow-lg flex items-center justify-center gap-2"
                   >
                     <RotateCcw size={20} />
                     Try Again (1 re-record left)
                   </button>
                   <button
                     onClick={onComplete}
-                    className="flex-1 bg-green-600 hover:bg-green-700 text-white px-6 py-4 rounded-xl font-semibold transition shadow-lg flex items-center justify-center gap-2"
+                    className="flex-1 bg-[#566246] hover:bg-[#6b7a55] text-white px-6 py-4 rounded-xl font-semibold transition shadow-lg flex items-center justify-center gap-2"
                   >
                     <CheckCircle size={20} />
                     Complete
@@ -354,9 +354,9 @@ export default function SublessonScreen3({
         </div>
 
         {/* Instructions */}
-        <div className="mt-12 bg-purple-900 bg-opacity-30 rounded-2xl p-6 border border-purple-700">
-          <h4 className="font-semibold text-lg mb-3 text-purple-200">💡 Tips:</h4>
-          <ul className="space-y-2 text-gray-300">
+        <div className="mt-12 bg-[#566246]/15 rounded-2xl p-6 border border-[#A4C2A5]/20">
+          <h4 className="font-semibold text-lg mb-3 text-[#D8DAD3]">💡 Tips:</h4>
+          <ul className="space-y-2 text-[#D8DAD3]/70">
             <li>• Remember what you learned - there's no example this time!</li>
             <li>• Make sure you're in a well-lit area</li>
             <li>• Keep your hands visible in the camera frame</li>
