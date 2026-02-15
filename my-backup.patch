@@ -1,0 +1,2608 @@
+From 213e815a73a5edee19bdb4606e27e75e0bc84a0b Mon Sep 17 00:00:00 2001
+From: Ryan Jung <ryanjung@Ryans-MacBook-Air.local>
+Date: Sun, 15 Feb 2026 03:41:50 -0500
+Subject: [PATCH] Loosen Gemini judging + XP logic tweaks
+
+---
+ backend/app/gemini/context/prompt.json        | 414 +++++++++--------
+ backend/app/gemini/getresponse.py             | 157 +++++--
+ backend/app/main.py                           |  60 ++-
+ backend/app/services/video_convert.py         |  44 +-
+ .../src/app/components/EvaluationModal.tsx    | 106 +++++
+ frontend/src/app/components/lesson-node.tsx   |   2 +-
+ frontend/src/app/components/lesson-path.tsx   | 190 +++++---
+ .../src/app/components/sublesson-screen1.tsx  | 399 ++++++++--------
+ .../src/app/components/sublesson-screen3.tsx  | 438 ++++++++++--------
+ frontend/vite.config.ts                       |   9 +
+ 10 files changed, 1100 insertions(+), 719 deletions(-)
+ create mode 100644 frontend/src/app/components/EvaluationModal.tsx
+
+diff --git a/backend/app/gemini/context/prompt.json b/backend/app/gemini/context/prompt.json
+index 566cc2cc..fce51eac 100644
+--- a/backend/app/gemini/context/prompt.json
++++ b/backend/app/gemini/context/prompt.json
+@@ -1,6 +1,6 @@
+ {
+-  "task": "You are evaluating sign language word attempts. Compare a user's landmark sequence to a demonstrator's landmark sequence representing the correct execution of the same sign language word. The user is attempting to do the same sign as the professional.",
+-  
++  "task": "You are evaluating sign language word attempts. Compare a user's landmark sequence to a demonstrator's landmark sequence representing the correct execution of the same sign language word. The user is attempting to do the same sign as the professional. Be lenient: most imperfect-but-recognizable attempts should score 3. If uncertain between two scores, choose the higher score.",
++
+   "context": {
+     "domain": "Sign language word evaluation",
+     "description": "Each evaluation compares one user attempt of a single sign language word against a perfect demonstrator performing the same word.",
+@@ -10,228 +10,234 @@
+   "input_contract": {
+     "demonstrator_key": "demonstrator",
+     "user_attempt_key": "user_attempt",
+-    "alignment": "Implicitly infer alignment by comparing motion and phase similarity."
++    "alignment": "Implicitly infer alignment by comparing motion and phase similarity. Be tolerant to timing differences."
+   },
+ 
+   "judging_rules": {
+-    "primary_principle": "Score based on similarity to the demonstrator.",
++    "primary_principle": "Score based on whether the user conveys the sign’s core idea, not perfect imitation. Be forgiving of natural variation.",
+     "limitations": [
+       "Judge only from landmark geometry and motion.",
+       "Do not infer visual appearance not encoded in landmarks.",
+-      "Evaluate each criterion independently.",
++      "Prioritize overall meaning and major motion phases over fine details.",
++      "Allow reasonable variation in timing, amplitude, and exact location.",
++      "Treat landmark noise and camera framing as common.",
+       "Use a 0–4 scale for scoring."
+     ]
+   },
+ 
+   "judging_rubric": {
+     "rules_for_judging": [
+-    "Judge by comparing the user's landmark sequence to the demonstrator's landmark sequence. The demonstrator is the reference for correctness.",
+-    "You may infer temporal alignment implicitly using similarity of hand and face landmark motion (e.g., align corresponding phases of motion).",
+-    "Do not rely on visual appearance cues not present in landmarks (e.g., skin texture, exact occlusion, finger tension).",
+-    "When a judgment depends on palm orientation or fine finger pose, base it only on what can be inferred from landmark geometry; avoid claiming certainty beyond the coordinates.",
+-    "Evaluate each criterion independently based on landmark geometry and motion patterns.",
+-    "Use a 0–4 scale: 0 = does not match demonstrator, 4 = matches demonstrator closely."
+-  ],
+-  "criteria": [
+-    {
+-      "name": "Movement",
+-      "what_to_judge": "Whether the user reproduces the demonstrator’s overall motion structure (presence of motion, phases, and motion type).",
+-      "compare_using_landmarks": [
+-        "wrist/palm-center trajectory over time",
+-        "velocity over time (moving vs holding)",
+-        "phase structure (start → stroke → hold → return if present in demonstrator)"
+-      ],
+-      "typical_errors": [
+-        "missing a key motion phase",
+-        "extra movement not present in demonstrator",
+-        "different motion type (e.g., wave vs straight move)"
+-      ]
+-    },
+-    {
+-      "name": "Exaggeration",
+-      "what_to_judge": "Whether the motion amplitude is similar to the demonstrator (not significantly smaller or larger).",
+-      "compare_using_landmarks": [
+-        "total displacement of wrist/palm-center",
+-        "trajectory bounding box size",
+-        "peak-to-peak range in main motion axis"
+-      ],
+-      "typical_errors": [
+-        "motion much smaller than demonstrator",
+-        "motion much larger than demonstrator"
+-      ]
+-    },
+-    {
+-      "name": "Path",
+-      "what_to_judge": "Whether the shape of the motion trajectory matches the demonstrator.",
+-      "compare_using_landmarks": [
+-        "trajectory curvature pattern",
+-        "deviation from demonstrator trajectory shape",
+-        "shape similarity across aligned phases"
+-      ],
+-      "typical_errors": [
+-        "straight vs arc mismatch",
+-        "loop appears when demonstrator has none",
+-        "trajectory deviates or wanders"
+-      ]
+-    },
+-    {
+-      "name": "Direction",
+-      "what_to_judge": "Whether the dominant direction(s) of motion match the demonstrator (including reversals).",
+-      "compare_using_landmarks": [
+-        "dominant motion vector direction per phase",
+-        "direction changes and reversals pattern",
+-        "sign of motion along major axes"
+-      ],
+-      "typical_errors": [
+-        "reversed direction",
+-        "extra reversals or missing reversals",
+-        "direction drift during the stroke"
+-      ]
+-    },
+-    {
+-      "name": "Flow",
+-      "what_to_judge": "Whether smoothness and continuity match the demonstrator (unless the demonstrator shows crisp stops).",
+-      "compare_using_landmarks": [
+-        "velocity continuity",
+-        "acceleration changes (spikes vs smooth)",
+-        "pause/hold pattern compared to demonstrator"
+-      ],
+-      "typical_errors": [
+-        "jerky motion vs smooth demonstrator",
+-        "unintended pauses not in demonstrator",
+-        "missing crisp stop/hold that demonstrator has"
+-      ]
+-    },
+-    {
+-      "name": "Hand Shape / Orientation",
+-      "what_to_judge": "Whether the user matches the demonstrator’s hand configuration and orientation pattern at key moments.",
+-      "compare_using_landmarks": [
+-        "finger extension/closure pattern (per finger)",
+-        "finger spread pattern (between fingertips)",
+-        "thumb placement relative to index and palm",
+-        "orientation proxy from landmark geometry (e.g., palm plane / relative landmark configuration)"
+-      ],
+-      "typical_errors": [
+-        "wrong fingers extended",
+-        "handshape drifts during key pose",
+-        "orientation pattern differs at key pose"
+-      ]
+-    },
+-    {
+-      "name": "Positioning of Hand and FInger",
+-      "what_to_judge": "Whether internal hand geometry matches the demonstrator (relative placement and implied contact/near-contact patterns).",
+-      "compare_using_landmarks": [
+-        "relative distances (fingertip↔palm, fingertip↔fingertip)",
+-        "relative alignment of fingers",
+-        "joint angle patterns implied by landmark geometry"
+-      ],
+-      "typical_errors": [
+-        "thumb placement differs",
+-        "fingers misaligned",
+-        "near-contact differs from demonstrator"
+-      ]
+-    },
+-    {
+-      "name": "Location of Hand compared to face",
+-      "what_to_judge": "Whether the hand is in the same face-relative region as the demonstrator throughout the sign.",
+-      "compare_using_landmarks": [
+-        "hand position relative to face landmarks (translation-invariant)",
+-        "distance to face center / key face points across time",
+-        "side-of-face consistency (left/right/center relative to face)"
+-      ],
+-      "typical_errors": [
+-        "hand too high/low/side vs demonstrator",
+-        "hand too close/far vs demonstrator",
+-        "switches region during the sign"
+-      ]
+-    },
+-    {
+-      "name": "Finger Position",
+-      "what_to_judge": "Whether fine-grained finger bends, separations, and thumb details match the demonstrator.",
+-      "compare_using_landmarks": [
+-        "per-finger bend pattern from joint geometry",
+-        "fingertip spacing pattern",
+-        "thumb-index geometry"
+-      ],
+-      "typical_errors": [
+-        "fingers not bent enough vs demonstrator",
+-        "finger spread differs",
+-        "thumb tucked/extended differently"
+-      ]
+-    },
+-    {
+-      "name": "Timing & Segmentation",
+-      "what_to_judge": "Whether the user matches the demonstrator’s timing structure and phase durations (after implicit alignment).",
+-      "compare_using_landmarks": [
+-        "relative duration of phases (stroke/hold/return) compared to demonstrator",
+-        "timing of peaks (max extension / max displacement) compared to demonstrator",
+-        "hold presence and approximate placement compared to demonstrator"
+-      ],
+-      "typical_errors": [
+-        "rushed stroke vs demonstrator",
+-        "holds too long/short vs demonstrator",
+-        "peaks occur in different phase"
+-      ]
++      "Judge whether the user communicates the same sign category/intent as the demonstrator.",
++      "Be tolerant of normal variation in speed, range of motion, and exact positioning.",
++      "Implicitly align phases, but do not punish small phase shifts or early/late starts.",
++      "Treat landmark noise, jitter, and small finger differences as common and acceptable.",
++      "Only penalize handshape/orientation if it clearly changes the sign's meaning.",
++      "Weight Movement + Direction + Location most heavily.",
++      "Treat Handshape/Orientation, Timing, Flow, Jitter as low priority unless extreme.",
++      "Use the scoring anchors below and stay lenient."
++    ],
++
++    "score_anchors": {
++      "4": "Clearly the same sign. Minor differences are fine.",
++      "3": "Recognizably the same sign. Some differences, meaning preserved.",
++      "2": "Some resemblance, but a key element is missing or unclear.",
++      "1": "Mostly different sign. Only slight resemblance.",
++      "0": "Does not resemble the sign at all."
+     },
+-    {
+-      "name": "Stability / Jitter",
+-      "what_to_judge": "Whether unintended micro-movements or shakiness exceed the demonstrator’s stability, especially during holds.",
+-      "compare_using_landmarks": [
+-        "high-frequency jitter in fingertip and wrist positions",
+-        "stability during low-motion segments",
+-        "frame-to-frame noise compared to demonstrator"
++
++    "grading_bias": {
++      "default_score_if_recognizable": 3,
++      "when_to_use_4": [
++        "Main motion matches well",
++        "Location is in the right region",
++        "No meaning-changing handshape difference"
+       ],
+-      "typical_errors": [
+-        "shaky holds",
+-        "noisy jitter throughout",
+-        "unstable handshape when demonstrator is stable"
++      "when_to_drop_below_3": [
++        "Wrong motion type or direction that changes the sign",
++        "Hand is in a clearly different region for most of the sign",
++        "Handshape is clearly different in a meaning-changing way",
++        "Missing a major required phase entirely"
+       ]
+     },
+-    {
+-      "name": "Two-Hand Coordination",
+-      "what_to_judge": "If demonstrator uses two hands, whether the user matches relative timing, spacing, and role behavior.",
+-      "compare_using_landmarks": [
+-        "inter-hand distance profile over time",
+-        "synchrony between hands across phases",
+-        "non-dominant hand stability when demonstrator is stable"
+-      ],
+-      "typical_errors": [
+-        "hands out of sync",
+-        "wrong relative spacing",
+-        "non-dominant hand moves when demonstrator stays fixed"
+-      ]
+-    }
+-  ]
++
++    "criteria": [
++      {
++        "name": "Movement",
++        "what_to_judge": "Whether the user reproduces the demonstrator’s overall motion structure (presence of motion, phases, and motion type).",
++        "compare_using_landmarks": [
++          "wrist/palm-center trajectory over time",
++          "velocity over time (moving vs holding)",
++          "phase structure (start → stroke → hold → return if present)"
++        ],
++        "typical_errors": [
++          "missing a key motion phase",
++          "extra movement that changes the sign identity",
++          "different motion type (e.g., wave vs straight move)"
++        ],
++        "leniency_notes": [
++          "Allow small extra motion if the main motion matches.",
++          "Do not penalize minor shakiness as wrong movement."
++        ]
++      },
++      {
++        "name": "Location of Hand compared to face",
++        "what_to_judge": "Whether the hand stays in the correct general face-relative region during the sign.",
++        "compare_using_landmarks": [
++          "hand position relative to face landmarks (translation-invariant)",
++          "distance to face center / key face points across time",
++          "side-of-face consistency (left/right/center relative to face)"
++        ],
++        "typical_errors": [
++          "hand in a different region that changes meaning",
++          "hand consistently too far from the target region"
++        ],
++        "leniency_notes": [
++          "Allow moderate offset if it stays in the same general region.",
++          "Be forgiving if the camera framing is imperfect."
++        ]
++      },
++      {
++        "name": "Hand Shape / Orientation",
++        "what_to_judge": "Only judge if the handshape/orientation is clearly different in a meaning-changing way. Ignore small finger differences.",
++        "compare_using_landmarks": [
++          "finger extension/closure pattern (broad)",
++          "thumb placement relative to index and palm (broad)",
++          "orientation proxy from landmark geometry (only if clear)"
++        ],
++        "typical_errors": [
++          "wrong fingers extended in a way that changes the sign",
++          "completely different handshape"
++        ],
++        "leniency_notes": [
++          "Be forgiving of small finger bend differences.",
++          "Do not over-penalize unclear palm orientation."
++        ]
++      },
++      {
++        "name": "Direction",
++        "what_to_judge": "Whether the dominant direction(s) of motion match the demonstrator (including reversals).",
++        "compare_using_landmarks": [
++          "dominant motion vector direction per phase",
++          "direction changes and reversals pattern"
++        ],
++        "typical_errors": [
++          "reversed direction that changes the sign",
++          "missing a major reversal"
++        ],
++        "leniency_notes": [
++          "Allow slight directional drift if overall direction matches."
++        ]
++      },
++      {
++        "name": "Path",
++        "what_to_judge": "Whether the overall shape of the motion trajectory matches the demonstrator.",
++        "compare_using_landmarks": [
++          "trajectory curvature pattern",
++          "shape similarity across aligned phases"
++        ],
++        "typical_errors": [
++          "straight vs arc mismatch that changes the sign",
++          "big wandering away from the intended path"
++        ],
++        "leniency_notes": [
++          "Minor wobble is fine if the path type is correct."
++        ]
++      },
++      {
++        "name": "Timing & Segmentation",
++        "what_to_judge": "Whether the user matches the demonstrator’s phase structure (not exact speed).",
++        "compare_using_landmarks": [
++          "presence of phases (stroke/hold/return) compared to demonstrator",
++          "approximate ordering of phases"
++        ],
++        "typical_errors": [
++          "skipping a required phase",
++          "reordering phases in a way that changes meaning"
++        ],
++        "leniency_notes": [
++          "Do not penalize for faster/slower execution if the phase order matches."
++        ]
++      },
++      {
++        "name": "Flow",
++        "what_to_judge": "Whether the movement is reasonably smooth compared to the demonstrator.",
++        "compare_using_landmarks": [
++          "velocity continuity",
++          "pause/hold pattern compared to demonstrator"
++        ],
++        "typical_errors": [
++          "major unintended pauses that break the sign"
++        ],
++        "leniency_notes": [
++          "Ignore small jitter; only penalize severe jerkiness."
++        ]
++      },
++      {
++        "name": "Exaggeration",
++        "what_to_judge": "Whether motion amplitude is in a reasonable range compared to the demonstrator.",
++        "compare_using_landmarks": [
++          "total displacement of wrist/palm-center",
++          "trajectory bounding box size"
++        ],
++        "typical_errors": [
++          "extremely tiny motion that removes the sign",
++          "extremely large motion that changes the sign"
++        ],
++        "leniency_notes": [
++          "Most users will be smaller amplitude; be forgiving unless extreme."
++        ]
++      },
++      {
++        "name": "Stability / Jitter",
++        "what_to_judge": "Whether unintended shakiness is severe enough to obscure the sign.",
++        "compare_using_landmarks": [
++          "high-frequency jitter in fingertip and wrist positions",
++          "stability during low-motion segments"
++        ],
++        "typical_errors": [
++          "shaky holds that obscure the handshape"
++        ],
++        "leniency_notes": [
++          "Do not punish normal hand tremor or camera noise."
++        ]
++      },
++      {
++        "name": "Two-Hand Coordination",
++        "what_to_judge": "If demonstrator uses two hands, whether relative timing and spacing are approximately correct.",
++        "compare_using_landmarks": [
++          "inter-hand distance profile over time",
++          "synchrony between hands across phases"
++        ],
++        "typical_errors": [
++          "hands completely out of sync in a way that changes the sign"
++        ],
++        "leniency_notes": [
++          "Allow imperfect synchrony if roles are clearly correct."
++        ]
++      }
++    ]
+   },
+ 
+   "output_format": {
+     "output_requirements": {
+-        "description": "Return ONLY valid JSON. No markdown or extra text.",
+-        "rules": [
+-          "Return strictly valid JSON.",
+-          "Do not include explanations outside the JSON.",
+-          "overall_score_0_to_4 must be an integer from 0 to 4.",
+-          "summary must be 2–3 sentences.",
+-          "pros must contain 1–3 concise bullet points.",
+-          "cons must contain 1–3 concise bullet points.",
+-          "Each bullet point must be one short sentence.",
+-          "Each bullet point must be under 12 words.",
+-          "Do not use multiple clauses in bullet points."
+-        ],
+-        "format": {
+-          "overall_score_0_to_4": "integer",
+-          "summary": "string (2–3 sentences)",
+-          "pros": {
+-            "points": [
+-              "string"
+-            ]
+-          },
+-          "cons": {
+-            "points": [
+-              "string"
+-            ]
+-          }
+-        }
++      "description": "Return ONLY valid JSON. No markdown or extra text.",
++      "rules": [
++        "Return strictly valid JSON.",
++        "Do not include explanations outside the JSON.",
++        "overall_score_0_to_4 must be an integer from 0 to 4.",
++        "summary must be 2–3 sentences.",
++        "pros must contain 1–3 concise bullet points.",
++        "cons must contain 1–3 concise bullet points.",
++        "Each bullet point must be one short sentence.",
++        "Each bullet point must be under 12 words.",
++        "Do not use multiple clauses in bullet points."
++      ],
++      "format": {
++        "overall_score_0_to_4": "integer",
++        "summary": "string (2–3 sentences)",
++        "pros": { "points": ["string"] },
++        "cons": { "points": ["string"] }
+       }
+     }
+   }
++}
+\ No newline at end of file
+diff --git a/backend/app/gemini/getresponse.py b/backend/app/gemini/getresponse.py
+index ba001bcb..11a4cb9f 100644
+--- a/backend/app/gemini/getresponse.py
++++ b/backend/app/gemini/getresponse.py
+@@ -3,79 +3,134 @@ Gemini API integration for ASL sign language evaluation.
+ No caching - sends full prompt on each request.
+ """
+ import json
+-from google import genai
++import os
+ from pathlib import Path
++from typing import Optional
++
++from google import genai
++
+ from ..schemas.evaluation import EvaluationResponse
+ 
+-API_KEY = "AIzaSyCzXbX96SbDPZN-hz9UMBCRk6Vux9IBAEc"
++
++# IMPORTANT: Don't hardcode API keys in code (and never commit them).
++# Set in your shell: export GEMINI_API_KEY="..."
++API_KEY = os.getenv("GEMINI_API_KEY", "")
++if not API_KEY:
++    # You can still run in dev if you want, but it will fail fast with a clear message.
++    # Remove this check if you prefer silent failure.
++    raise RuntimeError("Missing GEMINI_API_KEY env var. Set it before running the backend.")
+ 
+ # Initialize the client
+ client = genai.Client(api_key=API_KEY)
+ 
+ # Load global context from prompt.json
+ CONTEXT_PATH = Path(__file__).parent / "context" / "prompt.json"
+-with open(CONTEXT_PATH, 'r') as f:
++with open(CONTEXT_PATH, "r") as f:
+     GLOBAL_CONTEXT = json.load(f)
+ 
+ 
+-def parse_gemini_json_response(response_text: str) -> EvaluationResponse:
+-    """
+-    Parse and validate the JSON response from Gemini.
+-
+-    Handles common issues like markdown code blocks and validates
+-    the response against the EvaluationResponse schema.
+-
+-    Args:
+-        response_text: Raw text response from Gemini API
++def _strip_code_fences(text: str) -> str:
++    """Remove ```json / ``` wrappers if Gemini returns markdown."""
++    t = (text or "").strip()
++    if t.startswith("```"):
++        t = t.replace("```json", "").replace("```", "").strip()
++    return t
+ 
+-    Returns:
+-        EvaluationResponse: Validated response object
+ 
+-    Raises:
+-        ValueError: If response cannot be parsed or doesn't match schema
+-        json.JSONDecodeError: If response is not valid JSON
++def _extract_largest_json_object(text: str) -> Optional[str]:
++    """
++    Extract the biggest {...} block from a string.
++    This handles Gemini returning: 'Here is the JSON: {...} additional text'
++    """
++    t = _strip_code_fences(text)
++
++    start = t.find("{")
++    end = t.rfind("}")
++    if start == -1 or end == -1 or end <= start:
++        return None
++
++    return t[start : end + 1]
++
++
++def _fallback_response(word: str, reason: str, raw: str) -> EvaluationResponse:
++    """Always return a valid schema object so the API never 500s on parse problems."""
++    data = {
++        "word": word or "unknown",
++        "video_path": "",
++        "evaluation": {
++            "overall_score_0_to_4": 0,
++            "summary": "We couldn’t read the AI feedback this time. Please retry.",
++            "pros": {"points": ["Recording received."]},
++            "cons": {"points": [reason]},
++        },
++        # Keep raw short so you don't blow up responses/logs
++        "raw_model_output": (raw or "")[:1500],
++    }
++    return EvaluationResponse(**data)
++
++
++def parse_gemini_json_response(response_text: str, *, word_hint: str = "") -> EvaluationResponse:
+     """
+-    # Clean up the response text
+-    text = response_text.strip()
++    Parse and validate the JSON response from Gemini.
+ 
+-    # Remove markdown code blocks if present
+-    if text.startswith('```json'):
+-        text = text.replace('```json', '').replace('```', '').strip()
+-    elif text.startswith('```'):
+-        text = text.replace('```', '').strip()
++    - Strips markdown fences
++    - Extracts JSON object even if extra text exists
++    - If parsing fails, returns a fallback (NO 500)
++    """
++    raw = response_text or ""
++    candidate = _extract_largest_json_object(raw)
++
++    if candidate is None:
++        return _fallback_response(
++            word_hint,
++            "Gemini response contained no JSON object.",
++            raw,
++        )
+ 
+     # Parse JSON
+     try:
+-        json_data = json.loads(text)
+-    except json.JSONDecodeError as e:
+-        raise ValueError(f"Failed to parse JSON response: {e}\nResponse text: {text[:200]}...")
++        json_data = json.loads(candidate)
++    except Exception as e:
++        return _fallback_response(
++            word_hint,
++            f"Failed to parse Gemini JSON: {e}",
++            raw,
++        )
+ 
+     # Validate against schema
+     try:
++        # Ensure word exists (sometimes Gemini might omit it)
++        if isinstance(json_data, dict) and "word" not in json_data and word_hint:
++            json_data["word"] = word_hint
+         return EvaluationResponse(**json_data)
+     except Exception as e:
+-        raise ValueError(f"Response validation failed: {e}\nJSON data: {json_data}")
++        return _fallback_response(
++            word_hint,
++            f"Response validation failed: {e}",
++            raw,
++        )
+ 
+ 
+ def get_gemini_response(demonstrator_json: str, user_attempt_json: str) -> EvaluationResponse:
+     """
+     Receives 2 JSONs (demonstrator and user_attempt as JSON strings),
+     sends them to Gemini with the global context prompt,
+-    and returns the validated evaluation response.
+-
+-    Args:
+-        demonstrator_json: JSON string of the demonstrator's sign language performance
+-        user_attempt_json: JSON string of the user's sign language attempt
+-
+-    Returns:
+-        EvaluationResponse: Validated evaluation response from Gemini
++    and returns a validated evaluation response.
+ 
+-    Raises:
+-        Exception: If API call fails or response cannot be parsed/validated
++    IMPORTANT: This function should never raise due to Gemini formatting.
++    It returns a fallback EvaluationResponse instead.
+     """
++    # Try to pull the word out of the user attempt JSON for better fallbacks
++    word_hint = ""
+     try:
+-        # Build the full prompt with system instruction and data
+-        system_instruction = f"""
++        attempt_obj = json.loads(user_attempt_json)
++        if isinstance(attempt_obj, dict):
++            word_hint = str(attempt_obj.get("word", "")).strip()
++    except Exception:
++        pass
++
++    # Build the full prompt with system instruction and data
++    system_instruction = f"""
+ {GLOBAL_CONTEXT['task']}
+ 
+ CONTEXT:
+@@ -99,7 +154,7 @@ OUTPUT REQUIREMENTS:
+ {json.dumps(GLOBAL_CONTEXT['output_format'], indent=2)}
+ """
+ 
+-        prompt = f"""
++    prompt = f"""
+ {system_instruction}
+ 
+ DATA TO EVALUATE:
+@@ -110,18 +165,20 @@ Demonstrator (correct execution):
+ User Attempt (to be evaluated):
+ {user_attempt_json}
+ 
+-Please evaluate the user's attempt and return ONLY valid JSON with no markdown or extra text.
++Return ONLY a single JSON object. No markdown. No extra text.
+ """
+ 
+-        # Generate response using Gemini
++    try:
+         response = client.models.generate_content(
+-            model='gemini-2.5-flash',
+-            contents=prompt
++            model="gemini-2.5-flash",
++            contents=prompt,
+         )
+-
+-        # Parse and validate the response
+-        return parse_gemini_json_response(response.text)
++        return parse_gemini_json_response(response.text, word_hint=word_hint)
+ 
+     except Exception as e:
+-        print(f"Error in get_gemini_response: {e}")
+-        raise
+\ No newline at end of file
++        # Never raise up to FastAPI; return fallback so frontend can show Retry UI nicely
++        return _fallback_response(
++            word_hint,
++            f"Gemini API call failed: {e}",
++            "",
++        )
+\ No newline at end of file
+diff --git a/backend/app/main.py b/backend/app/main.py
+index 61315fe7..385363d1 100644
+--- a/backend/app/main.py
++++ b/backend/app/main.py
+@@ -1,13 +1,18 @@
+-from fastapi import FastAPI, UploadFile, File, HTTPException
++from fastapi import FastAPI, UploadFile, File, HTTPException, Request
+ from fastapi.middleware.cors import CORSMiddleware
++from fastapi.responses import JSONResponse
+ from pydantic import BaseModel
+ from .schemas.evaluation import EvaluationResponse
+ from .services.video_convert import convert_video_to_json
+ from .services.landmark_load import load_reference_landmarks
+-from .gemini.getresponse import get_gemini_response 
++from .gemini.getresponse import get_gemini_response
+ 
+ app = FastAPI(title="ASL Rating API")
+ 
++@app.exception_handler(Exception)
++async def unhandled_exception_handler(request: Request, exc: Exception):
++    return JSONResponse(status_code=500, content={"detail": str(exc)})
++
+ # Configure CORS
+ app.add_middleware(
+     CORSMiddleware,
+@@ -96,6 +101,57 @@ async def get_rating(word: str, video: UploadFile = File(...)):
+ 
+ 
+ 
++@app.post("/api/evaluate-sign")
++async def evaluate_sign(word: str, video: UploadFile = File(...)):
++    """
++    Evaluate a user's sign recording against the reference.
++    Accepts video/webm (browser recordings) in addition to video/mp4.
++    Returns the evaluation wrapped as { word, evaluation: { ... } }.
++    """
++    CONTENT_TYPE_TO_SUFFIX = {
++        "video/mp4": ".mp4",
++        "video/webm": ".webm",
++        "video/x-matroska": ".mkv",
++    }
++    mime = (video.content_type or "").split(";")[0].strip().lower()
++    if mime not in CONTENT_TYPE_TO_SUFFIX:
++        raise HTTPException(
++            status_code=400,
++            detail=f"Invalid video type: {video.content_type}. Allowed: mp4, webm."
++        )
++    file_suffix = CONTENT_TYPE_TO_SUFFIX[mime]
++
++    video_content = await video.read()
++
++    MAX_FILE_SIZE = 50 * 1024 * 1024
++    if len(video_content) > MAX_FILE_SIZE:
++        raise HTTPException(status_code=400, detail="Video file too large. Maximum size: 50MB")
++    if len(video_content) == 0:
++        raise HTTPException(status_code=400, detail="Video file is empty")
++
++    try:
++        attempt_landmarks = convert_video_to_json(word, video_content, suffix=file_suffix)
++    except ValueError as e:
++        raise HTTPException(status_code=400, detail=f"Video processing error: {str(e)}")
++    except Exception as e:
++        raise HTTPException(status_code=500, detail=f"Failed to process video: {str(e)}")
++
++    try:
++        reference_landmarks = load_reference_landmarks(word)
++    except FileNotFoundError:
++        raise HTTPException(status_code=404, detail=f"No reference found for word '{word}'.")
++
++    try:
++        evaluation = get_gemini_response(
++            demonstrator_json=reference_landmarks,
++            user_attempt_json=attempt_landmarks
++        )
++    except Exception as e:
++        raise HTTPException(status_code=500, detail=f"AI evaluation failed: {str(e)}")
++
++    return {"word": word, "evaluation": evaluation}
++
++
+ @app.get("/health")
+ async def health_check():
+     """Health check endpoint"""
+diff --git a/backend/app/services/video_convert.py b/backend/app/services/video_convert.py
+index d6eb9863..dc04eee0 100644
+--- a/backend/app/services/video_convert.py
++++ b/backend/app/services/video_convert.py
+@@ -3,6 +3,7 @@ import mediapipe as mp
+ import json
+ import tempfile
+ import os
++import subprocess
+ 
+ mp_face_mesh = mp.solutions.face_mesh
+ mp_hands = mp.solutions.hands
+@@ -20,28 +21,61 @@ FACE_KEY_POINTS = {
+ }
+ 
+ 
+-def convert_video_to_json(word: str, video: bytes) -> str:
++def _transcode_to_mp4(video_bytes: bytes, input_suffix: str) -> bytes:
++    """Use ffmpeg to convert any video format to mp4 so OpenCV can decode it."""
++    inp_path = None
++    out_path = None
++    try:
++        with tempfile.NamedTemporaryFile(delete=False, suffix=input_suffix) as inp:
++            inp.write(video_bytes)
++            inp_path = inp.name
++        out_path = inp_path.replace(input_suffix, '_converted.mp4')
++        result = subprocess.run(
++            [
++                'ffmpeg', '-y', '-i', inp_path,
++                '-c:v', 'libx264', '-preset', 'ultrafast',
++                '-an',          # drop audio — not needed for landmark extraction
++                out_path
++            ],
++            capture_output=True,
++            timeout=60,
++        )
++        if result.returncode != 0:
++            raise ValueError(f"ffmpeg transcoding failed: {result.stderr.decode(errors='replace')}")
++        with open(out_path, 'rb') as f:
++            return f.read()
++    finally:
++        for p in (inp_path, out_path):
++            if p and os.path.exists(p):
++                os.remove(p)
++
++
++def convert_video_to_json(word: str, video: bytes, suffix: str = '.mp4') -> str:
+     """
+     Convert video to JSON landmark string.
+ 
+     Args:
+         word: The ASL word being signed
+         video: Video file content as bytes
++        suffix: File extension to use for the temp file (e.g. '.mp4' or '.webm')
+ 
+     Returns:
+         JSON string containing landmark data
+     """
+-    # Write video bytes to a temporary file
+-    with tempfile.NamedTemporaryFile(delete=False, suffix='.mp4') as temp_file:
++    # Transcode non-mp4 formats (e.g. webm from browser) to mp4 so OpenCV can decode them
++    if suffix != '.mp4':
++        video = _transcode_to_mp4(video, suffix)
++        suffix = '.mp4'
++
++    # Write video bytes to a temporary file with the correct extension
++    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as temp_file:
+         temp_file.write(video)
+         temp_path = temp_file.name
+ 
+     try:
+-        # Extract landmarks using the same logic as landmark_extractor
+         landmarks_json = _extract_landmarks(temp_path, word, face_sample_rate=10)
+         return landmarks_json
+     finally:
+-        # Clean up temporary file
+         if os.path.exists(temp_path):
+             os.remove(temp_path)
+ 
+diff --git a/frontend/src/app/components/EvaluationModal.tsx b/frontend/src/app/components/EvaluationModal.tsx
+new file mode 100644
+index 00000000..f43d77e9
+--- /dev/null
++++ b/frontend/src/app/components/EvaluationModal.tsx
+@@ -0,0 +1,106 @@
++import { CheckCircle, XCircle, RotateCcw, ArrowRight } from 'lucide-react';
++
++export interface EvaluationResult {
++  overall_score_0_to_4: number;
++  summary: string;
++  pros: { points: string[] };
++  cons: { points: string[] };
++}
++
++interface EvaluationModalProps {
++  result: EvaluationResult;
++  onContinue: () => void;
++  onTryAgain: () => void;
++  hideTryAgain?: boolean;
++}
++
++export default function EvaluationModal({ result, onContinue, onTryAgain, hideTryAgain = false }: EvaluationModalProps) {
++  const score = result.overall_score_0_to_4;
++  const passed = score >= 3;
++
++  const scoreColor = passed ? 'text-green-400' : 'text-red-400';
++  const scoreBg = passed
++    ? 'from-green-900/60 to-green-800/40 border-green-600/50'
++    : 'from-red-900/60 to-red-800/40 border-red-600/50';
++
++  return (
++    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4">
++      <div className="bg-gray-900 border border-gray-700 rounded-2xl shadow-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto">
++        {/* Score header */}
++        <div className={`bg-gradient-to-br ${scoreBg} border-b border-gray-700 rounded-t-2xl p-6 text-center`}>
++          <div className={`text-5xl font-bold ${scoreColor} mb-1`}>{passed ? 'Pass' : 'Fail'}</div>
++          <div className="text-gray-300 text-sm font-medium uppercase tracking-wider mb-3">Result</div>
++          <p className="text-white text-base leading-relaxed">{result.summary}</p>
++        </div>
++
++        {/* Feedback columns */}
++        <div className="grid grid-cols-2 gap-0 divide-x divide-gray-700">
++          {/* Successes */}
++          <div className="p-5">
++            <div className="flex items-center gap-2 mb-3">
++              <CheckCircle className="w-5 h-5 text-green-400 flex-shrink-0" />
++              <span className="font-semibold text-green-400 text-sm">Successes</span>
++            </div>
++            {result.pros.points.length > 0 ? (
++              <ul className="space-y-2">
++                {result.pros.points.map((point, i) => (
++                  <li key={i} className="text-gray-300 text-sm leading-snug flex gap-2">
++                    <span className="text-green-500 mt-0.5 flex-shrink-0">•</span>
++                    <span>{point}</span>
++                  </li>
++                ))}
++              </ul>
++            ) : (
++              <p className="text-gray-500 text-sm italic">None noted</p>
++            )}
++          </div>
++
++          {/* Improvements */}
++          <div className="p-5">
++            <div className="flex items-center gap-2 mb-3">
++              <XCircle className="w-5 h-5 text-orange-400 flex-shrink-0" />
++              <span className="font-semibold text-orange-400 text-sm">Improvements</span>
++            </div>
++            {result.cons.points.length > 0 ? (
++              <ul className="space-y-2">
++                {result.cons.points.map((point, i) => (
++                  <li key={i} className="text-gray-300 text-sm leading-snug flex gap-2">
++                    <span className="text-orange-500 mt-0.5 flex-shrink-0">•</span>
++                    <span>{point}</span>
++                  </li>
++                ))}
++              </ul>
++            ) : (
++              <p className="text-gray-500 text-sm italic">None noted</p>
++            )}
++          </div>
++        </div>
++
++        {/* XP notice */}
++        <div className={`mx-5 mb-4 px-4 py-2 rounded-lg text-sm text-center ${passed ? 'bg-green-900/30 text-green-300' : 'bg-gray-800 text-gray-400'}`}>
++          {passed ? '✨ XP awarded for this attempt!' : 'No XP this time — keep practicing!'}
++        </div>
++
++        {/* Buttons */}
++        <div className="flex gap-3 p-5 pt-0">
++          {!passed && !hideTryAgain && (
++            <button
++              onClick={onTryAgain}
++              className="flex-1 flex items-center justify-center gap-2 bg-gray-700 hover:bg-gray-600 text-white px-5 py-3 rounded-xl font-semibold transition"
++            >
++              <RotateCcw size={18} />
++              Try Again
++            </button>
++          )}
++          <button
++            onClick={onContinue}
++            className="flex-1 flex items-center justify-center gap-2 bg-purple-700 hover:bg-purple-600 text-white px-5 py-3 rounded-xl font-semibold transition"
++          >
++            Continue
++            <ArrowRight size={18} />
++          </button>
++        </div>
++      </div>
++    </div>
++  );
++}
+diff --git a/frontend/src/app/components/lesson-node.tsx b/frontend/src/app/components/lesson-node.tsx
+index 267db356..f8fb2a3d 100644
+--- a/frontend/src/app/components/lesson-node.tsx
++++ b/frontend/src/app/components/lesson-node.tsx
+@@ -44,7 +44,7 @@ const checkpointColors = {
+ };
+ 
+ export function LessonNode({ lesson, status, position, onClick, index }: LessonNodeProps) {
+-  const isClickable = status === 'unlocked';
++  const isClickable = status === 'unlocked' || status === 'completed';
+   const colors = lesson.type === 'checkpoint' || lesson.type === 'achievement'
+     ? checkpointColors[status]
+     : starColors[status];
+diff --git a/frontend/src/app/components/lesson-path.tsx b/frontend/src/app/components/lesson-path.tsx
+index c60f9169..ef41be91 100644
+--- a/frontend/src/app/components/lesson-path.tsx
++++ b/frontend/src/app/components/lesson-path.tsx
+@@ -241,7 +241,6 @@ export function LessonPath() {
+   );
+ 
+   const [totalXP, setTotalXP] = useState<number>(() => loadFromStorage("asl_totalXP", 0));
+-
+   const [dailyGoal, setDailyGoal] = useState<number>(() => loadFromStorage("asl_dailyGoal", 0));
+   const [streak, setStreak] = useState<number>(() => loadFromStorage("asl_streak", 3));
+ 
+@@ -278,10 +277,17 @@ export function LessonPath() {
+   const isSkipAttempt = useRef(false);
+   const isReviewSession = useRef(false);
+   const unitTestCorrectCount = useRef(0);
++
++  // XP gate: if any SS1/SS3 fails (score 1-2), no lesson XP.
++  const anySlotFailed = useRef(false);
++
++  // Pass count across all slots in the current session (ss1/ss3: evaluated pass, ss2: correct)
++  const slotPassCount = useRef(0);
++
+   const currentUnitWords = useRef<LessonWord[]>([]);
+   const lessonStartTime = useRef<number>(0);
+   const [lessonDuration, setLessonDuration] = useState<number>(0);
+-  const [showSkipFailModal, setShowSkipFailModal] = useState(false);
++  const [failReason, setFailReason] = useState<'skip' | 'lesson' | 'unit-test' | null>(null);
+   const [isReviewModal, setIsReviewModal] = useState(false);
+ 
+   const { level, xpForNextLevel, levelProgress } = getLevelInfo(totalXP);
+@@ -292,12 +298,10 @@ export function LessonPath() {
+   const [pathLines, setPathLines] = useState<{ x1: number; y1: number; x2: number; y2: number }[]>([]);
+ 
+   useEffect(() => {
+-    // Delay measurement so the browser has time to lay out nodes
+     const timer = setTimeout(() => {
+       const container = containerRef.current;
+       if (!container) return;
+ 
+-      // Get each node's center relative to the container using offset-based traversal
+       function getOffsetRelativeTo(el: HTMLElement, ancestor: HTMLElement) {
+         let x = 0, y = 0;
+         let current: HTMLElement | null = el;
+@@ -352,37 +356,100 @@ export function LessonPath() {
+           .map((l, i) => ({ l, i }))
+           .filter(({ l }) => l.unit === lesson.unit)
+           .map(({ i }) => i);
++
+         setCompletedLessons((prev) => {
+           const newSet = new Set(prev);
+           unitLessonIndices.forEach((i) => newSet.add(i));
+           return newSet;
+         });
++
++        // Skip attempt still awards checkpoint XP on pass
+         setTotalXP((prev) => prev + lesson.xp);
+         setDailyGoal((prev) => prev + lesson.xp);
++
+         setLessonDuration(Math.round((Date.now() - lessonStartTime.current) / 1000));
+         setShowConfetti(true);
+         setShowModal(true);
+       } else {
+-        setShowSkipFailModal(true);
++        setFailReason('skip');
+       }
++
++      anySlotFailed.current = false;
++      slotPassCount.current = 0;
+       return;
+     }
+ 
+     const review = isReviewSession.current;
++    const allSlotsPassed = !anySlotFailed.current;
++
++    // ── Unit test pass/fail gate ──────────────────────────────────────────────
++    if (isUnitTest.current) {
++      const passed = slotPassCount.current >= 10;
++      setActiveView("path");
++      setLessonSlots([]);
++      setCurrentSlotIndex(0);
++      sessionResults.current = [];
++      isUnitTest.current = false;
++      isSkipAttempt.current = false;
++      isReviewSession.current = false;
++      unitTestCorrectCount.current = 0;
++      currentUnitWords.current = [];
++      anySlotFailed.current = false;
++      slotPassCount.current = 0;
++
++      if (passed) {
++        setCompletedLessons((prev) => { const s = new Set(prev); s.add(lessonIndex); return s; });
++        setTotalXP((prev) => prev + lesson.xp);
++        setDailyGoal((prev) => prev + lesson.xp);
++        setLessonDuration(Math.round((Date.now() - lessonStartTime.current) / 1000));
++        setShowConfetti(true);
++        setShowModal(true);
++      } else {
++        setFailReason('unit-test');
++      }
++      return;
++    }
++
++    // ── Regular lesson pass/fail gate (need ≥5/6 slots passed) ───────────────
++    const lessonPassed = slotPassCount.current >= 5;
++
++    if (!review && !lessonPassed) {
++      setActiveView("path");
++      setLessonSlots([]);
++      setCurrentSlotIndex(0);
++      sessionResults.current = [];
++      isUnitTest.current = false;
++      isSkipAttempt.current = false;
++      isReviewSession.current = false;
++      unitTestCorrectCount.current = 0;
++      currentUnitWords.current = [];
++      anySlotFailed.current = false;
++      slotPassCount.current = 0;
++      setFailReason('lesson');
++      return;
++    }
+ 
++    // Mark completion (normal + review)
+     if (!review) {
+       setCompletedLessons((prev) => {
+         const newSet = new Set(prev);
+         newSet.add(lessonIndex);
+         return newSet;
+       });
+-      setTotalXP((prev) => prev + lesson.xp);
+-      setDailyGoal((prev) => prev + lesson.xp);
++
++      // ✅ Binary XP rule: any SS1/SS3 fail => 0 XP. SS1/SS3 pass => full lesson.xp
++      if (allSlotsPassed) {
++        setTotalXP((prev) => prev + lesson.xp);
++        setDailyGoal((prev) => prev + lesson.xp);
++      }
+     }
+ 
+     setLessonDuration(Math.round((Date.now() - lessonStartTime.current) / 1000));
+     setIsReviewModal(review);
+-    setShowConfetti(!review);
++
++    // Confetti only when a NEW lesson is completed AND XP awarded
++    setShowConfetti(!review && allSlotsPassed);
++
+     setShowModal(true);
+ 
+     setActiveView("path");
+@@ -395,17 +462,20 @@ export function LessonPath() {
+     isReviewSession.current = false;
+     unitTestCorrectCount.current = 0;
+     currentUnitWords.current = [];
+-  }, []);
++    anySlotFailed.current = false;
++    slotPassCount.current = 0;
++  }, [setTotalXP, setDailyGoal]);
+ 
+   const handleLessonClick = useCallback(
+     (lessonIndex: number) => {
+       const lesson = lessons[lessonIndex];
+       setCurrentLesson(lesson);
++
+       lessonStartTime.current = Date.now();
+       sessionResults.current = [];
++      anySlotFailed.current = false;
+ 
+       if (lesson.type === "checkpoint") {
+-        // Unit Test: gather all words from this unit's lessons
+         const unitWords = (unitLessons[lesson.unit] ?? []).flatMap((id) => lessonWords[id] ?? []);
+         if (unitWords.length > 0) {
+           for (const w of unitWords) {
+@@ -447,25 +517,31 @@ export function LessonPath() {
+         completeLesson(lessonIndex);
+       }
+     },
+-    [completeLesson]
++    [completeLesson, completedLessons]
+   );
+ 
+   const handleSkipToTest = useCallback(
+     (unitNumber: number) => {
+       const checkpoint = lessons.find((l) => l.unit === unitNumber && l.type === "checkpoint");
+       if (!checkpoint) return;
++
+       const unitWords = (unitLessons[unitNumber] ?? []).flatMap((id) => lessonWords[id] ?? []);
+       if (unitWords.length === 0) return;
++
+       for (const w of unitWords) {
+         if (!masteryMap.current[w.word]) masteryMap.current[w.word] = defaultWordStats();
+       }
++
+       setCurrentLesson(checkpoint);
+       lessonStartTime.current = Date.now();
+       sessionResults.current = [];
++      anySlotFailed.current = false;
++
+       isUnitTest.current = true;
+       isSkipAttempt.current = true;
+       unitTestCorrectCount.current = 0;
+       currentUnitWords.current = unitWords;
++
+       setLessonSlots(generateUnitTestSlots(unitWords, masteryMap.current));
+       setCurrentSlotIndex(0);
+       setActiveView("sublesson");
+@@ -474,7 +550,7 @@ export function LessonPath() {
+   );
+ 
+   const handleSlotComplete = useCallback(
+-    (wasCorrect?: boolean) => {
++    (wasCorrect?: boolean, ss1ss3Passed?: boolean) => {
+       const slot = lessonSlots[currentSlotIndex];
+       if (!slot) return;
+ 
+@@ -482,11 +558,25 @@ export function LessonPath() {
+         ? currentUnitWords.current
+         : (lessonWords[currentLesson!.id] ?? []);
+ 
+-      // update mastery + persist
++      // ✅ Gate XP based on SS1/SS3 score:
++      // passed=true only when score is 3 or 4.
++      if ((slot.type === "ss1" || slot.type === "ss3") && ss1ss3Passed === false) {
++        anySlotFailed.current = true;
++      }
++
++      // Track per-slot pass for lesson/unit-test gates
++      if (slot.type === "ss2") {
++        if (wasCorrect === true) slotPassCount.current += 1;
++      } else {
++        // ss1 / ss3: count as pass unless explicitly failed
++        if (ss1ss3Passed !== false) slotPassCount.current += 1;
++      }
++
++      // 1) Update mastery + persist
+       masteryMap.current = updateMastery(masteryMap.current, slot, currentSlotIndex, wasCorrect);
+       localStorage.setItem("asl_masteryMap", JSON.stringify(masteryMap.current));
+ 
+-      // track ss2 results
++      // 2) Track SS2 results (for unit test / overrides)
+       if (slot.type === "ss2") {
+         sessionResults.current.push({
+           word: slot.word,
+@@ -495,32 +585,10 @@ export function LessonPath() {
+         });
+       }
+ 
+-      // runtime overrides
++      // 3) Runtime overrides
+       let updatedSlots = lessonSlots;
+ 
+-      if (isUnitTest.current) {
+-        if (slot.type === "ss2") {
+-          if (wasCorrect) {
+-            unitTestCorrectCount.current += 1;
+-            // Reached 12 correct — complete
+-            if (unitTestCorrectCount.current >= 12) {
+-              completeLesson(lessons.findIndex((l) => l.id === currentLesson!.id));
+-              return;
+-            }
+-          } else {
+-            // Wrong — append a new SS2 for this word at the end
+-            const wordData = words.find((w) => w.word === slot.word);
+-            if (wordData) {
+-              updatedSlots = [
+-                ...lessonSlots,
+-                { type: "ss2" as const, word: wordData.word, videoPath: wordData.videoPath, correctAnswer: wordData.correctAnswer, wrongAnswers: wordData.wrongAnswers },
+-              ];
+-              setLessonSlots(updatedSlots);
+-            }
+-          }
+-        }
+-      } else {
+-        // IMPORTANT: overrideSlot3 is meant to run after the first SS2 slot (index 2)
++      if (!isUnitTest.current) {
+         if (currentSlotIndex === 2) {
+           updatedSlots = overrideSlot3(lessonSlots, words, slot.word, wasCorrect ?? true);
+           setLessonSlots(updatedSlots);
+@@ -530,7 +598,7 @@ export function LessonPath() {
+         }
+       }
+ 
+-      // advance
++      // 4) Advance
+       const nextIndex = currentSlotIndex + 1;
+       if (nextIndex < updatedSlots.length) {
+         setCurrentSlotIndex(nextIndex);
+@@ -548,10 +616,11 @@ export function LessonPath() {
+     sessionResults.current = [];
+     isUnitTest.current = false;
+     currentUnitWords.current = [];
++    anySlotFailed.current = false;
++    slotPassCount.current = 0;
+     setCurrentLesson(null);
+   }, []);
+ 
+-  // NOTE: completedLessons stores lesson *index*, and you pass `index` into getLessonStatus.
+   const getLessonStatus = (lessonIndex: number): "locked" | "unlocked" | "completed" => {
+     if (completedLessons.has(lessonIndex)) return "completed";
+     if (lessonIndex === 0) return "unlocked";
+@@ -559,14 +628,13 @@ export function LessonPath() {
+     return previousCompleted ? "unlocked" : "locked";
+   };
+ 
+-
+   // Render active sublesson slot
+   if (activeView === "sublesson" && lessonSlots.length > 0) {
+     const slot = lessonSlots[currentSlotIndex];
+     const slotKey = `${currentSlotIndex}-${slot.type}-${slot.word}`;
+ 
+-    const unitNames = ['Greetings & Basics', 'Family', 'Daily Life', 'Out & About'];
+-    const unitName = unitNames[(currentLesson?.unit ?? 1) - 1] ?? 'ASL';
++    const unitNames = ["Greetings & Basics", "Family", "Daily Life", "Out & About"];
++    const unitName = unitNames[(currentLesson?.unit ?? 1) - 1] ?? "ASL";
+ 
+     if (slot.type === "ss1") {
+       return (
+@@ -575,7 +643,7 @@ export function LessonPath() {
+           wordPhrase={slot.word}
+           videoPath={slot.videoPath}
+           unitName={unitName}
+-          onComplete={() => handleSlotComplete()}
++          onComplete={(passed) => handleSlotComplete(undefined, passed)}
+           onBack={handleBack}
+         />
+       );
+@@ -600,7 +668,7 @@ export function LessonPath() {
+           key={slotKey}
+           wordPhrase={slot.word}
+           unitName={unitName}
+-          onComplete={() => handleSlotComplete()}
++          onComplete={(passed) => handleSlotComplete(undefined, passed)}
+           onBack={handleBack}
+         />
+       );
+@@ -630,7 +698,7 @@ export function LessonPath() {
+         {currentLesson && (
+           <LessonCompleteModal
+             isOpen={showModal}
+-            xpEarned={isReviewModal ? 0 : currentLesson.xp}
++            xpEarned={isReviewModal ? 0 : (!anySlotFailed.current ? currentLesson.xp : 0)}
+             lessonTitle={currentLesson.title}
+             duration={lessonDuration}
+             isReview={isReviewModal}
+@@ -642,7 +710,7 @@ export function LessonPath() {
+           />
+         )}
+ 
+-        {showSkipFailModal && (
++        {failReason !== null && (
+           <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-40 p-4">
+             <motion.div
+               className="bg-slate-900 border border-slate-700 rounded-2xl p-8 max-w-md w-full shadow-2xl text-center"
+@@ -654,9 +722,18 @@ export function LessonPath() {
+                 <Zap className="w-12 h-12 text-white" />
+               </div>
+               <h2 className="text-2xl font-bold text-white mb-2">Not quite yet!</h2>
+-              <p className="text-slate-400 mb-6">Work through the lessons to build up your skills, then try the unit test again.</p>
++              <p className="text-slate-400 mb-6">
++                {failReason === 'lesson'
++                  ? 'You need to pass at least 5 out of 6 sublessons to complete this lesson. Give it another try!'
++                  : failReason === 'unit-test'
++                  ? 'You need to pass at least 10 out of 12 questions to pass the unit test. Keep practicing and try again!'
++                  : 'Work through the lessons to build up your skills, then try the unit test again.'}
++              </p>
+               <button
+-                onClick={() => { setShowSkipFailModal(false); setCurrentLesson(null); }}
++                onClick={() => {
++                  setFailReason(null);
++                  setCurrentLesson(null);
++                }}
+                 className="w-full bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 text-white py-3 text-lg font-bold rounded-xl shadow-lg transition"
+               >
+                 Keep Practicing
+@@ -675,7 +752,9 @@ export function LessonPath() {
+           <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-purple-600 rounded-xl flex items-center justify-center shadow-lg">
+             <Sparkles className="w-6 h-6 text-white" />
+           </div>
+-          <h1 className="text-2xl font-bold bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">Douling</h1>
++          <h1 className="text-2xl font-bold bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">
++            Douling
++          </h1>
+         </motion.div>
+ 
+         <div className="flex-1 overflow-y-auto overflow-x-hidden relative">
+@@ -684,10 +763,7 @@ export function LessonPath() {
+           <div className="relative max-w-2xl mx-auto py-16 px-8" ref={containerRef}>
+             {/* Connecting paths between stars */}
+             {pathLines.length > 0 && (
+-              <svg
+-                className="absolute inset-0 w-full h-full pointer-events-none"
+-                style={{ zIndex: 1 }}
+-              >
++              <svg className="absolute inset-0 w-full h-full pointer-events-none" style={{ zIndex: 1 }}>
+                 <defs>
+                   <linearGradient id="pathLit" x1="0%" y1="0%" x2="0%" y2="100%">
+                     <stop offset="0%" stopColor="#a78bfa" />
+@@ -705,8 +781,9 @@ export function LessonPath() {
+                     </feMerge>
+                   </filter>
+                 </defs>
++
+                 {pathLines.map((line, index) => {
+-                  const isLit = getLessonStatus(index) === 'completed';
++                  const isLit = getLessonStatus(index) === "completed";
+                   const midY = (line.y1 + line.y2) / 2;
+                   const pathD = `M ${line.x1} ${line.y1} C ${line.x1} ${midY}, ${line.x2} ${midY}, ${line.x2} ${line.y2}`;
+ 
+@@ -750,7 +827,7 @@ export function LessonPath() {
+                             <Star className="w-6 h-6 text-yellow-400 fill-yellow-400" />
+                           </div>
+                           <p className="text-sm text-blue-200 font-medium">
+-                            {(['Greetings & Basics', 'Family', 'Daily Life', 'Out & About'] as const)[unitNumber - 1]}
++                            {(["Greetings & Basics", "Family", "Daily Life", "Out & About"] as const)[unitNumber - 1]}
+                           </p>
+                           <button
+                             onClick={() => handleSkipToTest(unitNumber)}
+@@ -776,6 +853,7 @@ export function LessonPath() {
+                 );
+               })}
+             </div>
++
+           </div>
+         </div>
+       </div>
+diff --git a/frontend/src/app/components/sublesson-screen1.tsx b/frontend/src/app/components/sublesson-screen1.tsx
+index 5a4a4851..b2f769f3 100644
+--- a/frontend/src/app/components/sublesson-screen1.tsx
++++ b/frontend/src/app/components/sublesson-screen1.tsx
+@@ -1,50 +1,83 @@
+ import { useState, useRef, useEffect } from 'react';
+-import { ArrowLeft, Play, Pause, Video, CheckCircle, RotateCcw } from 'lucide-react';
++import { ArrowLeft, Video, CheckCircle, RotateCcw, Loader2, Play, Pause } from 'lucide-react';
++import EvaluationModal, { type EvaluationResult } from './EvaluationModal';
+ 
+ interface SublessonScreenProps {
+   unitName: string;
+   wordPhrase: string;
+   videoPath: string;
+-  onComplete: () => void;
++  onComplete: (passed: boolean) => void;
+   onBack: () => void;
+ }
+ 
++async function submitRecording(wordPhrase: string, blob: Blob): Promise<EvaluationResult> {
++  const word = wordPhrase.toLowerCase().replace(/\s+/g, '');
++  const formData = new FormData();
++  formData.append('word', word);
++  const file = new File([blob], `${word}.webm`, { type: 'video/webm' });
++  formData.append('video', file);
++
++  const res = await fetch(`/api/evaluate-sign?word=${encodeURIComponent(word)}`, {
++    method: 'POST',
++    body: formData,
++  });
++
++  if (res.status === 404) {
++    // No reference landmarks for this word yet — auto-pass silently
++    return {
++      overall_score_0_to_4: 4,
++      summary: 'Great effort! Keep practicing.',
++      pros: { points: ['Recording submitted successfully'] },
++      cons: { points: [] },
++    };
++  }
++
++  if (!res.ok) {
++    const detail = await res.json().catch(() => ({}));
++    throw new Error(detail?.detail ?? `Server error ${res.status}`);
++  }
++
++  const data = await res.json();
++  return data.evaluation ?? data;
++}
++
+ export default function SublessonScreen({
+   wordPhrase,
+   videoPath,
+   unitName,
+   onComplete,
+-  onBack
++  onBack,
+ }: SublessonScreenProps) {
+-  const [isExamplePlaying, setIsExamplePlaying] = useState(false);
+   const [isRecording, setIsRecording] = useState(false);
+   const [hasRecorded, setHasRecorded] = useState(false);
+   const [stream, setStream] = useState<MediaStream | null>(null);
+   const [recordedBlob, setRecordedBlob] = useState<Blob | null>(null);
+   const [exampleVideoDuration, setExampleVideoDuration] = useState(0);
+   const [recordingTimeLeft, setRecordingTimeLeft] = useState(0);
+-  const [reRecordCount, setReRecordCount] = useState(0);
+-  
++
++  const [evaluating, setEvaluating] = useState(false);
++  const [evalError, setEvalError] = useState<string | null>(null);
++  const [evalResult, setEvalResult] = useState<EvaluationResult | null>(null);
++  const attemptRef = useRef(0);
++  const [attempt, setAttempt] = useState(0);
++  const [recordedPlaying, setRecordedPlaying] = useState(false);
++  // Track whether the pending action after eval is "complete" or "try-again"
++  const pendingAction = useRef<'complete' | 'retry'>('complete');
++
+   const exampleVideoRef = useRef<HTMLVideoElement>(null);
+   const userVideoRef = useRef<HTMLVideoElement>(null);
+   const recordedVideoRef = useRef<HTMLVideoElement>(null);
+   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+   const chunksRef = useRef<Blob[]>([]);
+-  const recordingTimerRef = useRef<NodeJS.Timeout | null>(null);
+-  const countdownIntervalRef = useRef<NodeJS.Timeout | null>(null);
++  const recordingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
++  const countdownIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+ 
+-  // Start camera access
+   const startCamera = async () => {
+     try {
+-      const mediaStream = await navigator.mediaDevices.getUserMedia({ 
+-        video: {
+-          facingMode: 'user', // Use front camera
+-          width: { ideal: 1280 },
+-          height: { ideal: 720 }
+-        }, 
+-        audio: false 
++      const mediaStream = await navigator.mediaDevices.getUserMedia({
++        video: { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 720 } },
++        audio: false,
+       });
+-      console.log('✅ Camera access granted');
+       setStream(mediaStream);
+     } catch (error) {
+       console.error('❌ Error accessing camera:', error);
+@@ -52,188 +85,163 @@ export default function SublessonScreen({
+     }
+   };
+ 
+-  // Stop camera
+   const stopCamera = () => {
+     if (stream) {
+-      stream.getTracks().forEach(track => track.stop());
++      stream.getTracks().forEach((track) => track.stop());
+       setStream(null);
+     }
+   };
+ 
+-  // Start recording
+   const startRecording = () => {
+-    if (!stream) {
+-      console.error('❌ No stream available');
+-      return;
+-    }
+-    
++    if (!stream) return;
++
+     chunksRef.current = [];
+     const mediaRecorder = new MediaRecorder(stream);
+     mediaRecorderRef.current = mediaRecorder;
+ 
+     mediaRecorder.ondataavailable = (event) => {
+-      if (event.data.size > 0) {
+-        chunksRef.current.push(event.data);
+-      }
++      if (event.data.size > 0) chunksRef.current.push(event.data);
+     };
+ 
+     mediaRecorder.onstop = () => {
+-      console.log('📼 MediaRecorder stopped, processing chunks...');
+       const blob = new Blob(chunksRef.current, { type: 'video/webm' });
+-      console.log('📦 Blob created, size:', blob.size, 'bytes');
++
++      console.log("REC STOP:");
++      console.log("chunks:", chunksRef.current.map(c => c.size));
++      console.log("blob.size:", blob.size);
++      console.log("blob.type:", blob.type);
+       setRecordedBlob(blob);
+       setHasRecorded(true);
+-      
+-      // Wait a bit for React to render the video element
++
+       setTimeout(() => {
+         if (recordedVideoRef.current) {
+           const url = URL.createObjectURL(blob);
+           recordedVideoRef.current.src = url;
+-          recordedVideoRef.current.load(); // Force load
+-          console.log('✅ Recording saved and loaded, URL:', url);
+-          
+-          // Try to play
+-          recordedVideoRef.current.play().catch(err => {
+-            console.log('Auto-play blocked:', err);
+-          });
+-        } else {
+-          console.error('❌ recordedVideoRef.current is null!');
+-        }
+-        
+-        // If this is the second recording (after one re-record), auto-submit
+-        if (reRecordCount >= 1) {
+-          console.log('🎯 Second recording complete - auto-submitting in 2 seconds...');
+-          setTimeout(() => {
+-            onComplete();
+-          }, 2000);
++          recordedVideoRef.current.load();
++          recordedVideoRef.current.play().catch(() => {});
+         }
+       }, 100);
++
++      const nextAttempt = attemptRef.current + 1;
++      attemptRef.current = nextAttempt;
++      setAttempt(nextAttempt);
++
++      if (nextAttempt >= 2) {
++        evaluate(blob, 'complete');
++      }
+     };
+ 
+     mediaRecorder.start();
+     setIsRecording(true);
+-    console.log('🔴 Recording started');
+-    console.log('📏 Example video duration:', exampleVideoDuration, 'seconds');
+ 
+-    // Auto-stop after 2x the example video duration
+     const maxDuration = exampleVideoDuration * 2 * 1000;
+     setRecordingTimeLeft(exampleVideoDuration * 2);
+-    console.log(`⏱️ Max recording duration: ${exampleVideoDuration * 2} seconds (${maxDuration}ms)`);
+-    
+-    // Countdown timer for display
++
+     const startTime = Date.now();
+     countdownIntervalRef.current = setInterval(() => {
+-      const elapsed = (Date.now() - startTime) / 1000;
+-      const remaining = Math.max(0, (exampleVideoDuration * 2) - elapsed);
++      const remaining = Math.max(0, exampleVideoDuration * 2 - (Date.now() - startTime) / 1000);
+       setRecordingTimeLeft(remaining);
+-      
+-      if (remaining <= 0 && countdownIntervalRef.current) {
+-        clearInterval(countdownIntervalRef.current);
+-      }
++      if (remaining <= 0 && countdownIntervalRef.current) clearInterval(countdownIntervalRef.current);
+     }, 100);
+-    
+-    recordingTimerRef.current = setTimeout(() => {
+-      console.log('⏹️ Auto-stopping recording (max duration reached)');
+-      stopRecording();
+-    }, maxDuration);
++
++    recordingTimerRef.current = setTimeout(() => stopRecording(), maxDuration);
+   };
+ 
+-  // Stop recording
+   const stopRecording = () => {
+     if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+-      console.log('⏹️ Stopping recording, current state:', mediaRecorderRef.current.state);
+       mediaRecorderRef.current.stop();
+       setIsRecording(false);
+-      
+-      // Clear the auto-stop timer
+-      if (recordingTimerRef.current) {
+-        clearTimeout(recordingTimerRef.current);
+-        recordingTimerRef.current = null;
+-      }
+-      
+-      // Clear countdown interval
+-      if (countdownIntervalRef.current) {
+-        clearInterval(countdownIntervalRef.current);
+-        countdownIntervalRef.current = null;
+-      }
+-      
+-      // DON'T stop camera - keep it running for potential re-record
+-      console.log('📹 Camera stream kept active for potential re-record');
+-    } else {
+-      console.log('⚠️ Cannot stop - recorder is not active');
++      if (recordingTimerRef.current) { clearTimeout(recordingTimerRef.current); recordingTimerRef.current = null; }
++      if (countdownIntervalRef.current) { clearInterval(countdownIntervalRef.current); countdownIntervalRef.current = null; }
+     }
+   };
+ 
+-  // Reset and try again
+-  const resetRecording = () => {
+-    const newCount = reRecordCount + 1;
+-    setReRecordCount(newCount);
+-    
+-    console.log(`🔄 Re-recording attempt ${newCount}/1`);
+-    console.log('📹 Camera should still be active, returning to recording view');
+-    
+-    // Clear the recorded video
++  const evaluate = async (blob: Blob, action: 'complete' | 'retry') => {
++    if (evaluating) return;
++    pendingAction.current = action;
++    setEvalError(null);
++    setEvaluating(true);
++    try {
++      const result = await submitRecording(wordPhrase, blob);
++      setEvalResult(result);
++    } catch (err) {
++      setEvalError(err instanceof Error ? err.message : 'Evaluation failed. Please try again.');
++    } finally {
++      setEvaluating(false);
++    }
++  };
++
++  const handleComplete = () => {
++    if (!recordedBlob || evaluating) return;
++    evaluate(recordedBlob, 'complete');
++  };
++
++  const handleTryAgain = () => {
++    if (attemptRef.current < 1) return;
+     setHasRecorded(false);
+     setRecordedBlob(null);
++    setEvalResult(null);
++    setEvalError(null);
+     if (recordedVideoRef.current) {
+-      // Revoke the old blob URL to free memory
+-      if (recordedVideoRef.current.src) {
+-        URL.revokeObjectURL(recordedVideoRef.current.src);
+-      }
++      if (recordedVideoRef.current.src) URL.revokeObjectURL(recordedVideoRef.current.src);
+       recordedVideoRef.current.src = '';
+     }
+-    
+-    // Clear any pending timer
+-    if (recordingTimerRef.current) {
+-      clearTimeout(recordingTimerRef.current);
+-      recordingTimerRef.current = null;
+-    }
+   };
+ 
+-  // Play/pause example video
+-  const toggleExampleVideo = () => {
+-    if (exampleVideoRef.current) {
+-      if (isExamplePlaying) {
+-        exampleVideoRef.current.pause();
+-        setIsExamplePlaying(false);
+-      } else {
+-        exampleVideoRef.current.play();
+-        setIsExamplePlaying(true);
+-      }
++  const resetRecording = () => {
++    setHasRecorded(false);
++    setRecordedBlob(null);
++    setEvalResult(null);
++    setEvalError(null);
++    attemptRef.current = 0;
++    setAttempt(0);
++    if (recordedVideoRef.current) {
++      if (recordedVideoRef.current.src) URL.revokeObjectURL(recordedVideoRef.current.src);
++      recordedVideoRef.current.src = '';
+     }
++    if (recordingTimerRef.current) { clearTimeout(recordingTimerRef.current); recordingTimerRef.current = null; }
++  };
++
++  // Modal handlers
++  const handleModalContinue = () => {
++    const passed = (evalResult?.overall_score_0_to_4 ?? 0) >= 3;
++    setEvalResult(null);
++    onComplete(passed);
++  };
++
++  const handleModalTryAgain = () => {
++    setEvalResult(null);
++    resetRecording();
+   };
+ 
+-  // Attach camera stream to video element when stream is available
+   useEffect(() => {
+-    if (stream && userVideoRef.current) {
+-      userVideoRef.current.srcObject = stream;
+-      console.log('✅ Camera stream attached to video element');
+-    }
+-  }, [stream, hasRecorded]); // Re-run when hasRecorded changes too
++    if (stream && userVideoRef.current) userVideoRef.current.srcObject = stream;
++  }, [stream, hasRecorded]);
+ 
+-  // Cleanup on unmount
+   useEffect(() => {
+     return () => {
+       stopCamera();
+-      // Clear recording timer if exists
+-      if (recordingTimerRef.current) {
+-        clearTimeout(recordingTimerRef.current);
+-      }
+-      // Clear countdown interval if exists
+-      if (countdownIntervalRef.current) {
+-        clearInterval(countdownIntervalRef.current);
+-      }
++      if (recordingTimerRef.current) clearTimeout(recordingTimerRef.current);
++      if (countdownIntervalRef.current) clearInterval(countdownIntervalRef.current);
++      attemptRef.current = 0;
+     };
+   }, []);
+ 
+   return (
+     <div className="min-h-screen bg-gradient-to-b from-gray-900 via-purple-900 to-gray-900 text-white">
++      {/* Evaluation modal overlay */}
++      {evalResult && (
++        <EvaluationModal
++          result={evalResult}
++          onContinue={handleModalContinue}
++          onTryAgain={handleModalTryAgain}
++          hideTryAgain
++        />
++      )}
++
+       {/* Header */}
+       <div className="flex items-center justify-between p-6">
+-        <button 
+-          onClick={onBack}
+-          className="flex items-center gap-2 text-purple-300 hover:text-white transition"
+-        >
++        <button onClick={onBack} className="flex items-center gap-2 text-purple-300 hover:text-white transition">
+           <ArrowLeft size={24} />
+           <span>Back</span>
+         </button>
+@@ -242,14 +250,13 @@ export default function SublessonScreen({
+       </div>
+ 
+       <div className="max-w-6xl mx-auto px-6 pb-12">
+-        {/* Word/Phrase Title */}
+         <div className="text-center mb-8">
+           <h2 className="text-4xl font-bold text-purple-300 mb-2">{wordPhrase}</h2>
+           <p className="text-gray-300">Watch the example to sign "{wordPhrase}", then record yourself!</p>
+         </div>
+ 
+         <div className="grid md:grid-cols-2 gap-8">
+-          {/* Example Video Section */}
++          {/* Example Video */}
+           <div className="space-y-4">
+             <h3 className="text-xl font-semibold text-gray-200 flex items-center gap-2">
+               <span className="bg-purple-700 rounded-full w-8 h-8 flex items-center justify-center text-sm">1</span>
+@@ -263,29 +270,21 @@ export default function SublessonScreen({
+                 className="w-full aspect-video object-cover bg-black"
+                 preload="auto"
+                 playsInline
+-                onEnded={() => setIsExamplePlaying(false)}
+-                onLoadedMetadata={(e) => {
+-                  const duration = (e.target as HTMLVideoElement).duration;
+-                  setExampleVideoDuration(duration);
+-                  console.log('✅ Video metadata loaded');
+-                  console.log('📏 Video duration:', duration, 'seconds');
+-                  console.log('⏱️ Max recording time will be:', duration * 2, 'seconds');
+-                }}
+-                onCanPlay={() => console.log('✅ Video can play')}
+-                onError={(e) => console.error('❌ Video error:', e)}
++                onEnded={() => {}}
++                onLoadedMetadata={(e) => setExampleVideoDuration((e.target as HTMLVideoElement).duration)}
+               >
+                 Your browser does not support the video tag.
+               </video>
+             </div>
+           </div>
+ 
+-          {/* User Recording Section */}
++          {/* User Recording */}
+           <div className="space-y-4">
+             <h3 className="text-xl font-semibold text-gray-200 flex items-center gap-2">
+               <span className="bg-purple-700 rounded-full w-8 h-8 flex items-center justify-center text-sm">2</span>
+               Your Turn
+             </h3>
+-            
++
+             {!stream && !hasRecorded && (
+               <div className="bg-gray-800 rounded-2xl p-12 text-center shadow-2xl aspect-video flex flex-col items-center justify-center">
+                 <Video className="w-16 h-16 text-purple-300 mb-4" />
+@@ -308,12 +307,6 @@ export default function SublessonScreen({
+                     muted
+                     playsInline
+                     className="w-full aspect-video object-cover bg-black scale-x-[-1]"
+-                    onLoadedMetadata={() => {
+-                      console.log('✅ Camera stream loaded');
+-                      console.log('Video dimensions:', userVideoRef.current?.videoWidth, 'x', userVideoRef.current?.videoHeight);
+-                      console.log('Stream active:', stream?.active);
+-                      console.log('Stream video tracks:', stream?.getVideoTracks());
+-                    }}
+                   >
+                     Your browser does not support video.
+                   </video>
+@@ -324,9 +317,7 @@ export default function SublessonScreen({
+                         <span className="text-sm font-semibold">Recording</span>
+                       </div>
+                       <div className="bg-black bg-opacity-70 px-3 py-1 rounded-full">
+-                        <span className="text-xs font-mono text-white">
+-                          {Math.ceil(recordingTimeLeft)}s left
+-                        </span>
++                        <span className="text-xs font-mono text-white">{Math.ceil(recordingTimeLeft)}s left</span>
+                       </div>
+                     </div>
+                   )}
+@@ -348,10 +339,7 @@ export default function SublessonScreen({
+                       Stop Recording
+                     </button>
+                   )}
+-                  <button
+-                    onClick={stopCamera}
+-                    className="px-6 py-4 bg-gray-700 hover:bg-purple-700 rounded-xl transition"
+-                  >
++                  <button onClick={stopCamera} className="px-6 py-4 bg-gray-700 hover:bg-purple-700 rounded-xl transition">
+                     Cancel
+                   </button>
+                 </div>
+@@ -363,64 +351,69 @@ export default function SublessonScreen({
+                 <div className="relative bg-gray-800 rounded-2xl overflow-hidden shadow-2xl">
+                   <video
+                     ref={recordedVideoRef}
+-                    controls
+                     playsInline
+                     className="w-full aspect-video object-cover bg-black scale-x-[-1]"
+-                    onLoadedData={() => {
+-                      console.log('✅ Recorded video loaded successfully!');
+-                      console.log('Video src:', recordedVideoRef.current?.src);
+-                      console.log('Video duration:', recordedVideoRef.current?.duration);
+-                      // Try to play automatically
+-                      if (recordedVideoRef.current) {
+-                        recordedVideoRef.current.play().catch(err => {
+-                          console.log('Auto-play blocked, user must click play:', err);
+-                        });
+-                      }
+-                    }}
+-                    onError={(e) => {
+-                      console.error('❌ Recorded video error:', e);
+-                      const video = e.target as HTMLVideoElement;
+-                      console.error('Video src:', video.src);
+-                      console.error('Video error code:', video.error?.code);
+-                      console.error('Video error message:', video.error?.message);
+-                    }}
++                    onLoadedData={() => recordedVideoRef.current?.play().catch(() => {})}
++                    onPlay={() => setRecordedPlaying(true)}
++                    onPause={() => setRecordedPlaying(false)}
++                    onEnded={() => setRecordedPlaying(false)}
++                    onError={(e) => console.error('❌ Recorded video error:', e)}
+                   >
+                     Your browser does not support the video tag.
+                   </video>
++                  <button
++                    onClick={() => {
++                      const v = recordedVideoRef.current;
++                      if (!v) return;
++                      v.paused ? v.play().catch(() => {}) : v.pause();
++                    }}
++                    className="absolute bottom-3 left-3 bg-black/60 hover:bg-black/80 text-white rounded-full p-2 transition"
++                  >
++                    {recordedPlaying ? <Pause size={18} /> : <Play size={18} />}
++                  </button>
+                 </div>
+-                
+-                {reRecordCount >= 1 ? (
+-                  // Second recording - show auto-submit message
+-                  <div className="bg-purple-900/20 border border-purple-500/40 rounded-xl p-6 text-center">
+-                    <CheckCircle className="w-12 h-12 text-purple-300 mx-auto mb-3" />
+-                    <h3 className="text-xl font-semibold text-purple-300 mb-2">Great job!</h3>
+-                    <p className="text-gray-300">Submitting your recording...</p>
+-                  </div>
+-                ) : (
+-                  // First recording - show buttons
+-                  <div className="flex gap-3">
+-                    <button
+-                      onClick={resetRecording}
+-                      className="flex-1 bg-gray-700 hover:bg-purple-700 text-white px-6 py-4 rounded-xl font-semibold transition shadow-lg flex items-center justify-center gap-2"
+-                    >
+-                      <RotateCcw size={20} />
+-                      Try Again (1 re-record left)
+-                    </button>
++
++                {evalError && (
++                  <div className="bg-red-900/40 border border-red-600/50 rounded-xl p-3 text-red-300 text-sm text-center">
++                    {evalError}
+                     <button
+-                      onClick={onComplete}
+-                      className="flex-1 bg-purple-700 hover:bg-purple-600 text-white px-6 py-4 rounded-xl font-semibold transition shadow-lg flex items-center justify-center gap-2"
++                      onClick={() => recordedBlob && evaluate(recordedBlob, pendingAction.current)}
++                      className="ml-2 underline hover:text-white transition"
+                     >
+-                      <CheckCircle size={20} />
+-                      Complete
++                      Retry
+                     </button>
+                   </div>
+                 )}
++
++                <div className="flex gap-3">
++                  <button
++                    onClick={handleTryAgain}
++                    disabled={evaluating}
++                    className="flex-1 bg-gray-700 hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed text-white px-6 py-4 rounded-xl font-semibold transition shadow-lg flex items-center justify-center gap-2"
++                  >
++                    {evaluating && pendingAction.current === 'retry' ? (
++                      <><Loader2 size={20} className="animate-spin" /> Evaluating...</>
++                    ) : (
++                      <><RotateCcw size={20} /> Try Again</>
++                    )}
++                  </button>
++                  <button
++                    onClick={handleComplete}
++                    disabled={evaluating}
++                    className="flex-1 bg-purple-700 hover:bg-purple-600 disabled:opacity-50 disabled:cursor-not-allowed text-white px-6 py-4 rounded-xl font-semibold transition shadow-lg flex items-center justify-center gap-2"
++                  >
++                    {evaluating && pendingAction.current === 'complete' ? (
++                      <><Loader2 size={20} className="animate-spin" /> Evaluating...</>
++                    ) : (
++                      <><CheckCircle size={20} /> Complete</>
++                    )}
++                  </button>
++                </div>
+               </div>
+             )}
+           </div>
+         </div>
+ 
+-        {/* Instructions */}
+         <div className="mt-12 bg-purple-900/20 rounded-2xl p-6 border border-purple-700/40">
+           <h4 className="font-semibold text-lg mb-3 text-gray-200">💡 Tips:</h4>
+           <ul className="space-y-2 text-gray-300">
+@@ -433,4 +426,4 @@ export default function SublessonScreen({
+       </div>
+     </div>
+   );
+-}
+\ No newline at end of file
++}
+diff --git a/frontend/src/app/components/sublesson-screen3.tsx b/frontend/src/app/components/sublesson-screen3.tsx
+index a0d80784..6fd43006 100644
+--- a/frontend/src/app/components/sublesson-screen3.tsx
++++ b/frontend/src/app/components/sublesson-screen3.tsx
+@@ -1,48 +1,79 @@
+ import { useState, useRef, useEffect } from 'react';
+-import { ArrowLeft, Video, CheckCircle, RotateCcw } from 'lucide-react';
++import { ArrowLeft, Video, CheckCircle, RotateCcw, Loader2, Play, Pause } from 'lucide-react';
++import EvaluationModal, { type EvaluationResult } from './EvaluationModal';
+ 
+ interface SublessonScreen3Props {
+   unitName: string;
+   wordPhrase: string;
+-  onComplete: () => void;
++  onComplete: (passed: boolean) => void;
+   onBack: () => void;
+ }
+ 
++async function submitRecording(wordPhrase: string, blob: Blob): Promise<EvaluationResult> {
++  const word = wordPhrase.toLowerCase().replace(/\s+/g, '');
++  const formData = new FormData();
++  formData.append('word', word);
++  const file = new File([blob], `${word}.webm`, { type: 'video/webm' });
++  formData.append('video', file);
++
++  const res = await fetch(`/api/evaluate-sign?word=${encodeURIComponent(word)}`, {
++    method: 'POST',
++    body: formData,
++  });
++
++  if (res.status === 404) {
++    return {
++      overall_score_0_to_4: 4,
++      summary: 'Great effort! Keep practicing.',
++      pros: { points: ['Recording submitted successfully'] },
++      cons: { points: [] },
++    };
++  }
++
++  if (!res.ok) {
++    const detail = await res.json().catch(() => ({}));
++    throw new Error(detail?.detail ?? `Server error ${res.status}`);
++  }
++
++  const data = await res.json();
++  return data.evaluation ?? data;
++}
++
+ export default function SublessonScreen3({
+   wordPhrase,
+   unitName,
+   onComplete,
+-  onBack
++  onBack,
+ }: SublessonScreen3Props) {
+   const [isRecording, setIsRecording] = useState(false);
+   const [hasRecorded, setHasRecorded] = useState(false);
+   const [stream, setStream] = useState<MediaStream | null>(null);
+   const [recordedBlob, setRecordedBlob] = useState<Blob | null>(null);
+   const [recordingTimeLeft, setRecordingTimeLeft] = useState(0);
+-  const [reRecordCount, setReRecordCount] = useState(0);
+-  
++
++  const [evaluating, setEvaluating] = useState(false);
++  const [evalError, setEvalError] = useState<string | null>(null);
++  const [evalResult, setEvalResult] = useState<EvaluationResult | null>(null);
++  const attemptRef = useRef(0);
++  const [attempt, setAttempt] = useState(0);
++  const [recordedPlaying, setRecordedPlaying] = useState(false);
++  const pendingAction = useRef<'complete' | 'retry'>('complete');
++
+   const userVideoRef = useRef<HTMLVideoElement>(null);
+   const recordedVideoRef = useRef<HTMLVideoElement>(null);
+   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+   const chunksRef = useRef<Blob[]>([]);
+-  const recordingTimerRef = useRef<NodeJS.Timeout | null>(null);
+-  const countdownIntervalRef = useRef<NodeJS.Timeout | null>(null);
++  const recordingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
++  const countdownIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+ 
+-  // Fixed duration for recording (6 seconds - 3x a typical 2-second sign)
+   const maxRecordingDuration = 6;
+ 
+-  // Start camera access
+   const startCamera = async () => {
+     try {
+-      const mediaStream = await navigator.mediaDevices.getUserMedia({ 
+-        video: {
+-          facingMode: 'user',
+-          width: { ideal: 1280 },
+-          height: { ideal: 720 }
+-        }, 
+-        audio: false 
++      const mediaStream = await navigator.mediaDevices.getUserMedia({
++        video: { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 720 } },
++        audio: false,
+       });
+-      console.log('✅ Camera access granted');
+       setStream(mediaStream);
+     } catch (error) {
+       console.error('❌ Error accessing camera:', error);
+@@ -50,161 +81,161 @@ export default function SublessonScreen3({
+     }
+   };
+ 
+-  // Stop camera
+   const stopCamera = () => {
+     if (stream) {
+-      stream.getTracks().forEach(track => track.stop());
++      stream.getTracks().forEach((track) => track.stop());
+       setStream(null);
+     }
+   };
+ 
+-  // Start recording
+   const startRecording = () => {
+-    if (!stream) {
+-      console.error('❌ No stream available');
+-      return;
+-    }
+-    
++    if (!stream) return;
++
+     chunksRef.current = [];
+     const mediaRecorder = new MediaRecorder(stream);
+     mediaRecorderRef.current = mediaRecorder;
+ 
+     mediaRecorder.ondataavailable = (event) => {
+-      if (event.data.size > 0) {
+-        chunksRef.current.push(event.data);
+-      }
++      if (event.data.size > 0) chunksRef.current.push(event.data);
+     };
+ 
+     mediaRecorder.onstop = () => {
+-      console.log('📼 MediaRecorder stopped, processing chunks...');
+       const blob = new Blob(chunksRef.current, { type: 'video/webm' });
+-      console.log('📦 Blob created, size:', blob.size, 'bytes');
++
++      console.log("REC STOP:");
++      console.log("chunks:", chunksRef.current.map(c => c.size));
++      console.log("blob.size:", blob.size);
++      console.log("blob.type:", blob.type);
+       setRecordedBlob(blob);
+       setHasRecorded(true);
+-      
++
+       setTimeout(() => {
+         if (recordedVideoRef.current) {
+           const url = URL.createObjectURL(blob);
+           recordedVideoRef.current.src = url;
+           recordedVideoRef.current.load();
+-          console.log('✅ Recording saved and loaded, URL:', url);
+-          
+-          recordedVideoRef.current.play().catch(err => {
+-            console.log('Auto-play blocked:', err);
+-          });
+-        } else {
+-          console.error('❌ recordedVideoRef.current is null!');
+-        }
+-        
+-        // If this is the second recording, auto-submit
+-        if (reRecordCount >= 1) {
+-          console.log('🎯 Second recording complete - auto-submitting in 2 seconds...');
+-          setTimeout(() => {
+-            onComplete();
+-          }, 2000);
++          recordedVideoRef.current.play().catch(() => {});
+         }
+       }, 100);
++
++      const nextAttempt = attemptRef.current + 1;
++      attemptRef.current = nextAttempt;
++      setAttempt(nextAttempt);
++
++      if (nextAttempt >= 2) {
++        evaluate(blob, 'complete');
++      }
+     };
+ 
+     mediaRecorder.start();
+     setIsRecording(true);
+-    console.log('🔴 Recording started');
+ 
+-    // Auto-stop after fixed duration
+     const maxDuration = maxRecordingDuration * 1000;
+     setRecordingTimeLeft(maxRecordingDuration);
+-    console.log(`⏱️ Max recording duration: ${maxRecordingDuration} seconds`);
+-    
+-    // Countdown timer
++
+     const startTime = Date.now();
+     countdownIntervalRef.current = setInterval(() => {
+-      const elapsed = (Date.now() - startTime) / 1000;
+-      const remaining = Math.max(0, maxRecordingDuration - elapsed);
++      const remaining = Math.max(0, maxRecordingDuration - (Date.now() - startTime) / 1000);
+       setRecordingTimeLeft(remaining);
+-      
+-      if (remaining <= 0 && countdownIntervalRef.current) {
+-        clearInterval(countdownIntervalRef.current);
+-      }
++      if (remaining <= 0 && countdownIntervalRef.current) clearInterval(countdownIntervalRef.current);
+     }, 100);
+-    
+-    recordingTimerRef.current = setTimeout(() => {
+-      console.log('⏹️ Auto-stopping recording (max duration reached)');
+-      stopRecording();
+-    }, maxDuration);
++
++    recordingTimerRef.current = setTimeout(() => stopRecording(), maxDuration);
+   };
+ 
+-  // Stop recording
+   const stopRecording = () => {
+     if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+-      console.log('⏹️ Stopping recording');
+       mediaRecorderRef.current.stop();
+       setIsRecording(false);
+-      
+-      if (recordingTimerRef.current) {
+-        clearTimeout(recordingTimerRef.current);
+-        recordingTimerRef.current = null;
+-      }
+-      
+-      if (countdownIntervalRef.current) {
+-        clearInterval(countdownIntervalRef.current);
+-        countdownIntervalRef.current = null;
+-      }
+-      
+-      console.log('📹 Camera stream kept active for potential re-record');
++      if (recordingTimerRef.current) { clearTimeout(recordingTimerRef.current); recordingTimerRef.current = null; }
++      if (countdownIntervalRef.current) { clearInterval(countdownIntervalRef.current); countdownIntervalRef.current = null; }
+     }
+   };
+ 
+-  // Reset and try again
+-  const resetRecording = () => {
+-    const newCount = reRecordCount + 1;
+-    setReRecordCount(newCount);
+-    
+-    console.log(`🔄 Re-recording attempt ${newCount}/1`);
+-    
++  const evaluate = async (blob: Blob, action: 'complete' | 'retry') => {
++    if (evaluating) return;
++    pendingAction.current = action;
++    setEvalError(null);
++    setEvaluating(true);
++    try {
++      const result = await submitRecording(wordPhrase, blob);
++      setEvalResult(result);
++    } catch (err) {
++      setEvalError(err instanceof Error ? err.message : 'Evaluation failed. Please try again.');
++    } finally {
++      setEvaluating(false);
++    }
++  };
++
++  const handleComplete = () => {
++    if (!recordedBlob || evaluating) return;
++    evaluate(recordedBlob, 'complete');
++  };
++
++  const handleTryAgain = () => {
++    if (attemptRef.current < 1) return;
+     setHasRecorded(false);
+     setRecordedBlob(null);
++    setEvalResult(null);
++    setEvalError(null);
+     if (recordedVideoRef.current) {
+-      if (recordedVideoRef.current.src) {
+-        URL.revokeObjectURL(recordedVideoRef.current.src);
+-      }
++      if (recordedVideoRef.current.src) URL.revokeObjectURL(recordedVideoRef.current.src);
+       recordedVideoRef.current.src = '';
+     }
+-    
+-    if (recordingTimerRef.current) {
+-      clearTimeout(recordingTimerRef.current);
+-      recordingTimerRef.current = null;
++  };
++
++  const resetRecording = () => {
++    setHasRecorded(false);
++    setRecordedBlob(null);
++    setEvalResult(null);
++    setEvalError(null);
++    attemptRef.current = 0;
++    setAttempt(0);
++    if (recordedVideoRef.current) {
++      if (recordedVideoRef.current.src) URL.revokeObjectURL(recordedVideoRef.current.src);
++      recordedVideoRef.current.src = '';
+     }
++    if (recordingTimerRef.current) { clearTimeout(recordingTimerRef.current); recordingTimerRef.current = null; }
++  };
++
++  const handleModalContinue = () => {
++    const passed = (evalResult?.overall_score_0_to_4 ?? 0) >= 3;
++    setEvalResult(null);
++    onComplete(passed);
++  };
++
++  const handleModalTryAgain = () => {
++    setEvalResult(null);
++    resetRecording();
+   };
+ 
+-  // Attach camera stream
+   useEffect(() => {
+-    if (stream && userVideoRef.current) {
+-      userVideoRef.current.srcObject = stream;
+-      console.log('✅ Camera stream attached');
+-    }
++    if (stream && userVideoRef.current) userVideoRef.current.srcObject = stream;
+   }, [stream, hasRecorded]);
+ 
+-  // Cleanup
+   useEffect(() => {
+     return () => {
+       stopCamera();
+-      if (recordingTimerRef.current) {
+-        clearTimeout(recordingTimerRef.current);
+-      }
+-      if (countdownIntervalRef.current) {
+-        clearInterval(countdownIntervalRef.current);
+-      }
++      if (recordingTimerRef.current) clearTimeout(recordingTimerRef.current);
++      if (countdownIntervalRef.current) clearInterval(countdownIntervalRef.current);
++      attemptRef.current = 0;
+     };
+   }, []);
+ 
+   return (
+     <div className="min-h-screen bg-gradient-to-b from-gray-900 via-purple-900 to-gray-900 text-white">
++      {evalResult && (
++        <EvaluationModal
++          result={evalResult}
++          onContinue={handleModalContinue}
++          onTryAgain={handleModalTryAgain}
++          hideTryAgain
++        />
++      )}
++
+       {/* Header */}
+       <div className="flex items-center justify-between p-6">
+-        <button 
+-          onClick={onBack}
+-          className="flex items-center gap-2 text-purple-300 hover:text-white transition"
+-        >
++        <button onClick={onBack} className="flex items-center gap-2 text-purple-300 hover:text-white transition">
+           <ArrowLeft size={24} />
+           <span>Back</span>
+         </button>
+@@ -214,7 +245,7 @@ export default function SublessonScreen3({
+ 
+       <div className="max-w-6xl mx-auto px-6 pb-12">
+         <div className="grid md:grid-cols-2 gap-8">
+-          {/* Instructions Section (replaces example video) */}
++          {/* Instructions panel */}
+           <div className="space-y-4">
+             <h3 className="text-xl font-semibold text-gray-200 flex items-center gap-2">
+               <span className="bg-purple-700 rounded-full w-8 h-8 flex items-center justify-center text-sm">1</span>
+@@ -230,13 +261,13 @@ export default function SublessonScreen3({
+             </div>
+           </div>
+ 
+-          {/* User Recording Section */}
++          {/* User Recording */}
+           <div className="space-y-4">
+             <h3 className="text-xl font-semibold text-gray-200 flex items-center gap-2">
+               <span className="bg-purple-700 rounded-full w-8 h-8 flex items-center justify-center text-sm">2</span>
+               Your Turn
+             </h3>
+-            
++
+             {!stream && !hasRecorded && (
+               <div className="bg-gray-800 rounded-2xl p-12 text-center shadow-2xl aspect-video flex flex-col items-center justify-center">
+                 <Video className="w-16 h-16 text-purple-300 mb-4" />
+@@ -250,112 +281,123 @@ export default function SublessonScreen3({
+               </div>
+             )}
+ 
+-          {stream && !hasRecorded && (
+-            <div className="space-y-4">
+-              <div className="relative bg-gray-800 rounded-2xl overflow-hidden shadow-2xl">
+-                <video
+-                  ref={userVideoRef}
+-                  autoPlay
+-                  muted
+-                  playsInline
+-                  className="w-full aspect-video object-cover bg-black scale-x-[-1]"
+-                  onLoadedMetadata={() => console.log('✅ Camera stream loaded')}
+-                >
+-                  Your browser does not support video.
+-                </video>
+-                {isRecording && (
+-                  <div className="absolute top-4 right-4 flex flex-col items-end gap-2">
+-                    <div className="flex items-center gap-2 bg-red-600 px-4 py-2 rounded-full">
+-                      <div className="w-3 h-3 bg-white rounded-full animate-pulse"></div>
+-                      <span className="text-sm font-semibold">Recording</span>
+-                    </div>
+-                    <div className="bg-black bg-opacity-70 px-3 py-1 rounded-full">
+-                      <span className="text-xs font-mono text-white">
+-                        {Math.ceil(recordingTimeLeft)}s left
+-                      </span>
++            {stream && !hasRecorded && (
++              <div className="space-y-4">
++                <div className="relative bg-gray-800 rounded-2xl overflow-hidden shadow-2xl">
++                  <video
++                    ref={userVideoRef}
++                    autoPlay
++                    muted
++                    playsInline
++                    className="w-full aspect-video object-cover bg-black scale-x-[-1]"
++                    onLoadedMetadata={() => console.log('✅ Camera stream loaded')}
++                  >
++                    Your browser does not support video.
++                  </video>
++                  {isRecording && (
++                    <div className="absolute top-4 right-4 flex flex-col items-end gap-2">
++                      <div className="flex items-center gap-2 bg-red-600 px-4 py-2 rounded-full">
++                        <div className="w-3 h-3 bg-white rounded-full animate-pulse"></div>
++                        <span className="text-sm font-semibold">Recording</span>
++                      </div>
++                      <div className="bg-black bg-opacity-70 px-3 py-1 rounded-full">
++                        <span className="text-xs font-mono text-white">{Math.ceil(recordingTimeLeft)}s left</span>
++                      </div>
+                     </div>
+-                  </div>
+-                )}
++                  )}
++                </div>
++                <div className="flex gap-3">
++                  {!isRecording ? (
++                    <button
++                      onClick={startRecording}
++                      className="flex-1 bg-red-600 hover:bg-red-700 text-white px-6 py-4 rounded-xl font-semibold transition shadow-lg flex items-center justify-center gap-2"
++                    >
++                      <div className="w-4 h-4 bg-white rounded-full"></div>
++                      Start Recording
++                    </button>
++                  ) : (
++                    <button
++                      onClick={stopRecording}
++                      className="flex-1 bg-gray-700 hover:bg-purple-700 text-white px-6 py-4 rounded-xl font-semibold transition shadow-lg"
++                    >
++                      Stop Recording
++                    </button>
++                  )}
++                  <button onClick={stopCamera} className="px-6 py-4 bg-gray-700 hover:bg-purple-700 rounded-xl transition">
++                    Cancel
++                  </button>
++                </div>
+               </div>
+-              <div className="flex gap-3">
+-                {!isRecording ? (
+-                  <button
+-                    onClick={startRecording}
+-                    className="flex-1 bg-red-600 hover:bg-red-700 text-white px-6 py-4 rounded-xl font-semibold transition shadow-lg flex items-center justify-center gap-2"
++            )}
++
++            {hasRecorded && (
++              <div className="space-y-4">
++                <div className="relative bg-gray-800 rounded-2xl overflow-hidden shadow-2xl">
++                  <video
++                    ref={recordedVideoRef}
++                    playsInline
++                    className="w-full aspect-video object-cover bg-black scale-x-[-1]"
++                    onLoadedData={() => recordedVideoRef.current?.play().catch(() => {})}
++                    onPlay={() => setRecordedPlaying(true)}
++                    onPause={() => setRecordedPlaying(false)}
++                    onEnded={() => setRecordedPlaying(false)}
++                    onError={(e) => console.error('❌ Recorded video error:', e)}
+                   >
+-                    <div className="w-4 h-4 bg-white rounded-full"></div>
+-                    Start Recording
+-                  </button>
+-                ) : (
++                    Your browser does not support the video tag.
++                  </video>
+                   <button
+-                    onClick={stopRecording}
+-                    className="flex-1 bg-gray-700 hover:bg-purple-700 text-white px-6 py-4 rounded-xl font-semibold transition shadow-lg"
++                    onClick={() => {
++                      const v = recordedVideoRef.current;
++                      if (!v) return;
++                      v.paused ? v.play().catch(() => {}) : v.pause();
++                    }}
++                    className="absolute bottom-3 left-3 bg-black/60 hover:bg-black/80 text-white rounded-full p-2 transition"
+                   >
+-                    Stop Recording
++                    {recordedPlaying ? <Pause size={18} /> : <Play size={18} />}
+                   </button>
+-                )}
+-                <button
+-                  onClick={stopCamera}
+-                  className="px-6 py-4 bg-gray-700 hover:bg-purple-700 rounded-xl transition"
+-                >
+-                  Cancel
+-                </button>
+-              </div>
+-            </div>
+-          )}
+-
+-          {hasRecorded && (
+-            <div className="space-y-4">
+-              <div className="relative bg-gray-800 rounded-2xl overflow-hidden shadow-2xl">
+-                <video
+-                  ref={recordedVideoRef}
+-                  controls
+-                  playsInline
+-                  className="w-full aspect-video object-cover bg-black scale-x-[-1]"
+-                  onLoadedData={() => {
+-                    console.log('✅ Recorded video loaded');
+-                    if (recordedVideoRef.current) {
+-                      recordedVideoRef.current.play().catch(err => {
+-                        console.log('Auto-play blocked:', err);
+-                      });
+-                    }
+-                  }}
+-                  onError={(e) => console.error('❌ Recorded video error:', e)}
+-                >
+-                  Your browser does not support the video tag.
+-                </video>
+-              </div>
+-              
+-              {reRecordCount >= 1 ? (
+-                <div className="bg-purple-900/20 border border-purple-500/40 rounded-xl p-6 text-center">
+-                  <CheckCircle className="w-12 h-12 text-purple-300 mx-auto mb-3" />
+-                  <h3 className="text-xl font-semibold text-purple-300 mb-2">Great job!</h3>
+-                  <p className="text-gray-300">Completing lesson...</p>
+                 </div>
+-              ) : (
++
++                {evalError && (
++                  <div className="bg-red-900/40 border border-red-600/50 rounded-xl p-3 text-red-300 text-sm text-center">
++                    {evalError}
++                    <button
++                      onClick={() => recordedBlob && evaluate(recordedBlob, pendingAction.current)}
++                      className="ml-2 underline hover:text-white transition"
++                    >
++                      Retry
++                    </button>
++                  </div>
++                )}
++
+                 <div className="flex gap-3">
+                   <button
+-                    onClick={resetRecording}
+-                    className="flex-1 bg-gray-700 hover:bg-purple-700 text-white px-6 py-4 rounded-xl font-semibold transition shadow-lg flex items-center justify-center gap-2"
++                    onClick={handleTryAgain}
++                    disabled={evaluating}
++                    className="flex-1 bg-gray-700 hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed text-white px-6 py-4 rounded-xl font-semibold transition shadow-lg flex items-center justify-center gap-2"
+                   >
+-                    <RotateCcw size={20} />
+-                    Try Again (1 re-record left)
++                    {evaluating && pendingAction.current === 'retry' ? (
++                      <><Loader2 size={20} className="animate-spin" /> Evaluating...</>
++                    ) : (
++                      <><RotateCcw size={20} /> Try Again</>
++                    )}
+                   </button>
+                   <button
+-                    onClick={onComplete}
+-                    className="flex-1 bg-purple-700 hover:bg-purple-600 text-white px-6 py-4 rounded-xl font-semibold transition shadow-lg flex items-center justify-center gap-2"
++                    onClick={handleComplete}
++                    disabled={evaluating}
++                    className="flex-1 bg-purple-700 hover:bg-purple-600 disabled:opacity-50 disabled:cursor-not-allowed text-white px-6 py-4 rounded-xl font-semibold transition shadow-lg flex items-center justify-center gap-2"
+                   >
+-                    <CheckCircle size={20} />
+-                    Complete
++                    {evaluating && pendingAction.current === 'complete' ? (
++                      <><Loader2 size={20} className="animate-spin" /> Evaluating...</>
++                    ) : (
++                      <><CheckCircle size={20} /> Complete</>
++                    )}
+                   </button>
+                 </div>
+-              )}
+-            </div>
+-          )}
++              </div>
++            )}
+           </div>
+         </div>
+ 
+-        {/* Instructions */}
+         <div className="mt-12 bg-purple-900/20 rounded-2xl p-6 border border-purple-700/40">
+           <h4 className="font-semibold text-lg mb-3 text-gray-200">💡 Tips:</h4>
+           <ul className="space-y-2 text-gray-300">
+@@ -368,4 +410,4 @@ export default function SublessonScreen3({
+       </div>
+     </div>
+   );
+-}
+\ No newline at end of file
++}
+diff --git a/frontend/vite.config.ts b/frontend/vite.config.ts
+index 4ccceb00..83519034 100644
+--- a/frontend/vite.config.ts
++++ b/frontend/vite.config.ts
+@@ -19,4 +19,13 @@ export default defineConfig({
+ 
+   // File types to support raw imports. Never add .css, .tsx, or .ts files to this.
+   assetsInclude: ['**/*.svg', '**/*.csv'],
++
++  server: {
++    proxy: {
++      '/api': {
++        target: 'http://localhost:8000',
++        changeOrigin: true,
++      },
++    },
++  },
+ })
+-- 
+2.50.1 (Apple Git-155)
+

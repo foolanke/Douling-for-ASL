@@ -1,5 +1,5 @@
 {
-  "task": "You are evaluating sign language word attempts. Compare a user's landmark sequence to a demonstrator's landmark sequence representing the correct execution of the same sign language word. The user is attempting to do the same sign as the professional. Be lenient: most imperfect-but-recognizable attempts should score 3. If uncertain between two scores, choose the higher score.",
+  "task": "You are evaluating sign language word attempts. Compare a user's landmark sequence to a demonstrator's landmark sequence representing the correct execution of the same sign language word. The user is attempting to do the same sign as the professional. Be extremely lenient: most imperfect-but-recognizable attempts should score 3. If uncertain between two scores, choose the higher score.",
 
   "context": {
     "domain": "Sign language word evaluation",
@@ -10,209 +10,192 @@
   "input_contract": {
     "demonstrator_key": "demonstrator",
     "user_attempt_key": "user_attempt",
-    "alignment": "Implicitly infer alignment by comparing motion and phase similarity. Be tolerant to timing differences."
+    "alignment": "Implicitly infer alignment by comparing motion and phase similarity. Be highly tolerant to timing differences, early/late starts, and short clips."
   },
 
   "judging_rules": {
-    "primary_principle": "Score based on whether the user conveys the sign’s core idea, not perfect imitation. Be forgiving of natural variation.",
+    "primary_principle": "Score based on whether the user conveys the sign’s core intent, not perfect imitation. Be forgiving of natural variation, camera framing, and landmark noise.",
     "limitations": [
       "Judge only from landmark geometry and motion.",
       "Do not infer visual appearance not encoded in landmarks.",
-      "Prioritize overall meaning and major motion phases over fine details.",
-      "Allow reasonable variation in timing, amplitude, and exact location.",
-      "Treat landmark noise and camera framing as common.",
+      "Prioritize overall meaning and motion intent over fine details.",
+      "Be very tolerant of start location, held location, path shape, and Z-axis depth differences.",
       "Use a 0–4 scale for scoring."
     ]
   },
 
   "judging_rubric": {
     "rules_for_judging": [
-      "Judge whether the user communicates the same sign category/intent as the demonstrator.",
-      "Be tolerant of normal variation in speed, range of motion, and exact positioning.",
-      "Implicitly align phases, but do not punish small phase shifts or early/late starts.",
-      "Treat landmark noise, jitter, and small finger differences as common and acceptable.",
-      "Only penalize handshape/orientation if it clearly changes the sign's meaning.",
-      "Weight Movement + Direction + Location most heavily.",
-      "Treat Handshape/Orientation, Timing, Flow, Jitter as low priority unless extreme.",
-      "Use the scoring anchors below and stay lenient."
+      "Default to scoring 3 if the attempt is plausibly the same sign.",
+      "If uncertain, choose the higher score.",
+      "Treat start location as a broad zone; do not require precision.",
+      "Treat where the hand remains as flexible; do not punish drift.",
+      "Treat path as flexible; accept curved, wobbly, partial, or shortened motion.",
+      "Treat initial Z-axis (toward/away camera) as highly unreliable; do not penalize it unless the sign is clearly reversed in intent.",
+      "Only drop below 3 for clear meaning-changing mistakes.",
+      "Handshape/orientation is low priority unless clearly meaning-changing.",
+      "Timing, flow, jitter, and micro-trajectory are low priority unless extreme."
     ],
 
     "score_anchors": {
-      "4": "Clearly the same sign. Minor differences are fine.",
-      "3": "Recognizably the same sign. Some differences, meaning preserved.",
-      "2": "Some resemblance, but a key element is missing or unclear.",
+      "4": "Clearly the same sign. Differences are minor.",
+      "3": "Recognizably the same sign. Differences are acceptable.",
+      "2": "Some resemblance, but core intent is unclear.",
       "1": "Mostly different sign. Only slight resemblance.",
-      "0": "Does not resemble the sign at all."
+      "0": "Does not resemble the sign."
     },
 
     "grading_bias": {
-      "default_score_if_recognizable": 3,
-      "when_to_use_4": [
-        "Main motion matches well",
-        "Location is in the right region",
-        "No meaning-changing handshape difference"
+      "default_score_if_plausible": 3,
+      "only_drop_below_3_if": [
+        "Motion type is clearly unrelated to the demonstrator",
+        "Hand is far away in an unrelated region for most frames",
+        "There is almost no meaningful motion when motion is essential",
+        "The motion intent is clearly opposite and meaning-changing overall"
       ],
-      "when_to_drop_below_3": [
-        "Wrong motion type or direction that changes the sign",
-        "Hand is in a clearly different region for most of the sign",
-        "Handshape is clearly different in a meaning-changing way",
-        "Missing a major required phase entirely"
+      "z_axis_leniency": [
+        "Assume Z depth from camera is noisy and unreliable.",
+        "Do not penalize forward/back differences by default.",
+        "If the sign requires outward motion, accept any outward-ish component even if Z is weak or reversed.",
+        "If Z direction seems opposite but the rest matches, still score 3."
+      ],
+      "location_leniency": [
+        "Accept very large offsets for start position.",
+        "Accept very large offsets for where the hand remains.",
+        "If the hand is anywhere in the general signing space, keep score at 3.",
+        "Do not penalize left/right differences unless meaning-changing.",
+        "Do not penalize height (high/low) differences unless extreme.",
+        "Do not penalize distance-to-camera differences (Z) for location."
+      ],
+      "path_leniency": [
+        "Do not require a specific curve shape.",
+        "Accept partial paths and shortened strokes.",
+        "Accept wobble, drift, and slight looping.",
+        "Only penalize large loops if they change the sign identity."
       ]
     },
 
     "criteria": [
       {
-        "name": "Movement",
-        "what_to_judge": "Whether the user reproduces the demonstrator’s overall motion structure (presence of motion, phases, and motion type).",
+        "name": "Start Location",
+        "what_to_judge": "Whether the starting hand location is anywhere within a broadly plausible signing space. This is intentionally extremely lenient.",
         "compare_using_landmarks": [
-          "wrist/palm-center trajectory over time",
-          "velocity over time (moving vs holding)",
-          "phase structure (start → stroke → hold → return if present)"
+          "start wrist/palm-center relative to face center (very coarse)",
+          "start wrist/palm-center relative to torso region (very coarse)",
+          "start wrist/palm-center within camera signing space (very coarse)"
         ],
         "typical_errors": [
-          "missing a key motion phase",
-          "extra movement that changes the sign identity",
-          "different motion type (e.g., wave vs straight move)"
+          "hand starts completely off-screen for most frames"
         ],
         "leniency_notes": [
-          "Allow small extra motion if the main motion matches.",
-          "Do not penalize minor shakiness as wrong movement."
+          "Accept big offsets in any direction.",
+          "Accept face-area starts or chest-area starts as plausible.",
+          "Accept left/right swaps unless clearly meaning-changing.",
+          "Only penalize if the hand is mostly outside signing space."
         ]
       },
+
       {
-        "name": "Location of Hand compared to face",
-        "what_to_judge": "Whether the hand stays in the correct general face-relative region during the sign.",
+        "name": "Remaining Location / Region",
+        "what_to_judge": "Whether the hand stays generally within signing space. Drift is expected and acceptable.",
         "compare_using_landmarks": [
-          "hand position relative to face landmarks (translation-invariant)",
-          "distance to face center / key face points across time",
-          "side-of-face consistency (left/right/center relative to face)"
+          "hand relative to face landmarks (coarse)",
+          "hand relative to torso region (coarse)",
+          "percentage of frames inside a broad signing-space box"
         ],
         "typical_errors": [
-          "hand in a different region that changes meaning",
-          "hand consistently too far from the target region"
+          "hand is off-screen or far outside signing space for most frames"
         ],
         "leniency_notes": [
-          "Allow moderate offset if it stays in the same general region.",
-          "Be forgiving if the camera framing is imperfect."
+          "Allow substantial drift, including up/down and side drift.",
+          "Do not punish moving between face and chest regions.",
+          "If mostly in frame and moving plausibly, keep score at 3."
         ]
       },
+
+      {
+        "name": "Motion Path",
+        "what_to_judge": "Whether the path is broadly consistent with the intended motion. Be very forgiving about circularity: accept circles, ovals, arcs, and wobbly loops.",
+        "compare_using_landmarks": [
+          "overall start-to-end displacement (coarse)",
+          "whether motion forms a loop/arc when demonstrator is circular (coarse)",
+          "whether motion is generally non-linear when demonstrator is circular (coarse)"
+        ],
+        "typical_errors": [
+          "path goes to a totally unrelated region with unrelated intent"
+        ],
+        "leniency_notes": [
+          "If demonstrator is circular, accept partial circles and arcs.",
+          "Accept ovals, spirals, and wobbly loops as circular enough.",
+          "Do not require closing the loop.",
+          "Do not penalize circle direction (CW vs CCW).",
+          "Only penalize if it becomes a straight stroke with no arc."
+        ]
+      },
+
+      {
+        "name": "Initial Z-Axis Movement",
+        "what_to_judge": "Whether the initial toward/away-camera movement is not meaning-changing. Be extremely lenient.",
+        "compare_using_landmarks": [
+          "net Z displacement early in the motion (coarse)",
+          "whether Z change is consistent with any outward intent (optional)"
+        ],
+        "typical_errors": [
+          "only if Z reversal clearly changes the sign's meaning by itself"
+        ],
+        "leniency_notes": [
+          "Treat Z as unreliable due to camera perspective.",
+          "Do not penalize Z differences unless everything else is also wrong.",
+          "If motion intent matches in XY, ignore Z."
+        ]
+      },
+
+      {
+        "name": "Core Motion Intent",
+        "what_to_judge": "Whether the user captures the sign's main motion idea at a high level.",
+        "compare_using_landmarks": [
+          "presence of motion vs no motion",
+          "coarse phase structure (a stroke happened)",
+          "net displacement intent (very coarse)"
+        ],
+        "typical_errors": [
+          "almost no meaningful motion when motion is essential",
+          "motion type is clearly different"
+        ],
+        "leniency_notes": [
+          "If it looks plausibly like the same intent, score 3."
+        ]
+      },
+
       {
         "name": "Hand Shape / Orientation",
-        "what_to_judge": "Only judge if the handshape/orientation is clearly different in a meaning-changing way. Ignore small finger differences.",
+        "what_to_judge": "Only penalize if clearly meaning-changing. Otherwise ignore.",
         "compare_using_landmarks": [
-          "finger extension/closure pattern (broad)",
-          "thumb placement relative to index and palm (broad)",
-          "orientation proxy from landmark geometry (only if clear)"
+          "broad finger extension/closure (coarse)",
+          "broad thumb placement (coarse)"
         ],
         "typical_errors": [
-          "wrong fingers extended in a way that changes the sign",
-          "completely different handshape"
+          "completely different handshape that changes meaning"
         ],
         "leniency_notes": [
-          "Be forgiving of small finger bend differences.",
-          "Do not over-penalize unclear palm orientation."
+          "Ignore small finger differences.",
+          "Ignore unclear palm orientation."
         ]
       },
+
       {
-        "name": "Direction",
-        "what_to_judge": "Whether the dominant direction(s) of motion match the demonstrator (including reversals).",
+        "name": "Timing / Flow / Jitter",
+        "what_to_judge": "Low priority. Only penalize if extreme and obscures intent.",
         "compare_using_landmarks": [
-          "dominant motion vector direction per phase",
-          "direction changes and reversals pattern"
+          "severe pauses that break the motion",
+          "severe chaos that obscures intent"
         ],
         "typical_errors": [
-          "reversed direction that changes the sign",
-          "missing a major reversal"
+          "extreme issues that make the attempt unreadable"
         ],
         "leniency_notes": [
-          "Allow slight directional drift if overall direction matches."
-        ]
-      },
-      {
-        "name": "Path",
-        "what_to_judge": "Whether the overall shape of the motion trajectory matches the demonstrator.",
-        "compare_using_landmarks": [
-          "trajectory curvature pattern",
-          "shape similarity across aligned phases"
-        ],
-        "typical_errors": [
-          "straight vs arc mismatch that changes the sign",
-          "big wandering away from the intended path"
-        ],
-        "leniency_notes": [
-          "Minor wobble is fine if the path type is correct."
-        ]
-      },
-      {
-        "name": "Timing & Segmentation",
-        "what_to_judge": "Whether the user matches the demonstrator’s phase structure (not exact speed).",
-        "compare_using_landmarks": [
-          "presence of phases (stroke/hold/return) compared to demonstrator",
-          "approximate ordering of phases"
-        ],
-        "typical_errors": [
-          "skipping a required phase",
-          "reordering phases in a way that changes meaning"
-        ],
-        "leniency_notes": [
-          "Do not penalize for faster/slower execution if the phase order matches."
-        ]
-      },
-      {
-        "name": "Flow",
-        "what_to_judge": "Whether the movement is reasonably smooth compared to the demonstrator.",
-        "compare_using_landmarks": [
-          "velocity continuity",
-          "pause/hold pattern compared to demonstrator"
-        ],
-        "typical_errors": [
-          "major unintended pauses that break the sign"
-        ],
-        "leniency_notes": [
-          "Ignore small jitter; only penalize severe jerkiness."
-        ]
-      },
-      {
-        "name": "Exaggeration",
-        "what_to_judge": "Whether motion amplitude is in a reasonable range compared to the demonstrator.",
-        "compare_using_landmarks": [
-          "total displacement of wrist/palm-center",
-          "trajectory bounding box size"
-        ],
-        "typical_errors": [
-          "extremely tiny motion that removes the sign",
-          "extremely large motion that changes the sign"
-        ],
-        "leniency_notes": [
-          "Most users will be smaller amplitude; be forgiving unless extreme."
-        ]
-      },
-      {
-        "name": "Stability / Jitter",
-        "what_to_judge": "Whether unintended shakiness is severe enough to obscure the sign.",
-        "compare_using_landmarks": [
-          "high-frequency jitter in fingertip and wrist positions",
-          "stability during low-motion segments"
-        ],
-        "typical_errors": [
-          "shaky holds that obscure the handshape"
-        ],
-        "leniency_notes": [
-          "Do not punish normal hand tremor or camera noise."
-        ]
-      },
-      {
-        "name": "Two-Hand Coordination",
-        "what_to_judge": "If demonstrator uses two hands, whether relative timing and spacing are approximately correct.",
-        "compare_using_landmarks": [
-          "inter-hand distance profile over time",
-          "synchrony between hands across phases"
-        ],
-        "typical_errors": [
-          "hands completely out of sync in a way that changes the sign"
-        ],
-        "leniency_notes": [
-          "Allow imperfect synchrony if roles are clearly correct."
+          "Normal jitter is fine.",
+          "Short clips are hard to judge—stay lenient."
         ]
       }
     ]

@@ -5,32 +5,25 @@ No caching - sends full prompt on each request.
 import json
 import os
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Any, Dict
 
+from dotenv import load_dotenv
 from google import genai
 
 from ..schemas.evaluation import EvaluationResponse
 
 
-# IMPORTANT: Don't hardcode API keys in code (and never commit them).
-# Set in your shell: export GEMINI_API_KEY="..."
+load_dotenv(Path(__file__).parents[2] / ".env", override=True)
 API_KEY = os.getenv("GEMINI_API_KEY", "")
-if not API_KEY:
-    # You can still run in dev if you want, but it will fail fast with a clear message.
-    # Remove this check if you prefer silent failure.
-    raise RuntimeError("Missing GEMINI_API_KEY env var. Set it before running the backend.")
 
-# Initialize the client
 client = genai.Client(api_key=API_KEY)
 
-# Load global context from prompt.json
 CONTEXT_PATH = Path(__file__).parent / "context" / "prompt.json"
 with open(CONTEXT_PATH, "r") as f:
     GLOBAL_CONTEXT = json.load(f)
 
 
 def _strip_code_fences(text: str) -> str:
-    """Remove ```json / ``` wrappers if Gemini returns markdown."""
     t = (text or "").strip()
     if t.startswith("```"):
         t = t.replace("```json", "").replace("```", "").strip()
@@ -38,89 +31,153 @@ def _strip_code_fences(text: str) -> str:
 
 
 def _extract_largest_json_object(text: str) -> Optional[str]:
-    """
-    Extract the biggest {...} block from a string.
-    This handles Gemini returning: 'Here is the JSON: {...} additional text'
-    """
     t = _strip_code_fences(text)
-
     start = t.find("{")
     end = t.rfind("}")
     if start == -1 or end == -1 or end <= start:
         return None
+    candidate = t[start : end + 1]
+    # Remove control characters that break JSON parsing (except \n \r \t)
+    import re
+    candidate = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]', '', candidate)
+    return candidate
 
-    return t[start : end + 1]
+
+def _ensure_points(obj: Any) -> Dict[str, list]:
+    """
+    pros/cons can come back as:
+    - {"points": ["..."]}
+    - ["..."]
+    - "..."
+    Normalize to {"points": [..]}.
+    """
+    if isinstance(obj, dict) and isinstance(obj.get("points"), list):
+        return {"points": [str(x) for x in obj["points"]][:3]}
+
+    if isinstance(obj, list):
+        return {"points": [str(x) for x in obj][:3]}
+
+    if isinstance(obj, str) and obj.strip():
+        return {"points": [obj.strip()[:120]]}
+
+    return {"points": []}
 
 
-def _fallback_response(word: str, reason: str, raw: str) -> EvaluationResponse:
-    """Always return a valid schema object so the API never 500s on parse problems."""
-    data = {
+def _normalize_eval_payload(json_data: dict, *, word_hint: str, raw: str) -> dict:
+    """
+    Normalize Gemini JSON to match EvaluationResponse expected fields.
+    Handles both:
+      { overall_score_0_to_4, summary, pros, cons }
+    and:
+      { evaluation: { ... } }
+    """
+    data = dict(json_data)
+
+    # If Gemini wrapped it as {"evaluation": {...}}, flatten it.
+    if isinstance(data.get("evaluation"), dict):
+        inner = data.pop("evaluation")
+        for k, v in inner.items():
+            if k not in data:
+                data[k] = v
+
+    # Ensure required top-level fields exist
+    data.setdefault("word", word_hint or "unknown")
+    data.setdefault("video_path", data.get("videoPath", "") or "")
+
+    # Coerce score
+    score = data.get("overall_score_0_to_4", 0)
+    try:
+        score = int(score)
+    except Exception:
+        score = 0
+    if score < 0:
+        score = 0
+    if score > 4:
+        score = 4
+    data["overall_score_0_to_4"] = score
+
+    # Summary
+    summary = data.get("summary", "")
+    if not isinstance(summary, str) or not summary.strip():
+        summary = "We couldn’t score this attempt reliably. Please try again."
+    data["summary"] = summary.strip()[:400]
+
+    # Pros/cons normalize
+    data["pros"] = _ensure_points(data.get("pros"))
+    data["cons"] = _ensure_points(data.get("cons"))
+
+    # Raw model output for debugging UI/logs
+    data["raw_model_output"] = (data.get("raw_model_output") or raw or "")[:1500]
+
+    return data
+
+
+def _fallback_response(*, word: str, video_path: str = "", reason: str, raw: str) -> EvaluationResponse:
+    payload = {
         "word": word or "unknown",
-        "video_path": "",
-        "evaluation": {
-            "overall_score_0_to_4": 0,
-            "summary": "We couldn’t read the AI feedback this time. Please retry.",
-            "pros": {"points": ["Recording received."]},
-            "cons": {"points": [reason]},
-        },
-        # Keep raw short so you don't blow up responses/logs
+        "video_path": video_path or "",
+        "overall_score_0_to_4": 0,
+        "summary": "We couldn’t score this attempt reliably. Please try again.",
+        "pros": {"points": ["Recording received."]},
+        "cons": {"points": [reason[:120]]},
         "raw_model_output": (raw or "")[:1500],
     }
-    return EvaluationResponse(**data)
+    return EvaluationResponse(**payload)
 
 
-def parse_gemini_json_response(response_text: str, *, word_hint: str = "") -> EvaluationResponse:
-    """
-    Parse and validate the JSON response from Gemini.
-
-    - Strips markdown fences
-    - Extracts JSON object even if extra text exists
-    - If parsing fails, returns a fallback (NO 500)
-    """
+def parse_gemini_json_response(response_text: str, *, word_hint: str = "", video_path: str = "") -> EvaluationResponse:
     raw = response_text or ""
     candidate = _extract_largest_json_object(raw)
 
     if candidate is None:
         return _fallback_response(
-            word_hint,
-            "Gemini response contained no JSON object.",
-            raw,
+            word=word_hint,
+            video_path=video_path,
+            reason="Gemini response contained no JSON object.",
+            raw=raw,
         )
 
-    # Parse JSON
     try:
         json_data = json.loads(candidate)
-    except Exception as e:
+    except Exception:
+        # Second attempt: strip all newlines/tabs inside string values
+        import re as _re
+        cleaned = _re.sub(r'[\r\n\t]+', ' ', candidate)
+        try:
+            json_data = json.loads(cleaned)
+        except Exception as e:
+            return _fallback_response(
+                word=word_hint,
+                video_path=video_path,
+                reason=f"Failed to parse Gemini JSON: {e}",
+                raw=raw,
+            )
+
+    if not isinstance(json_data, dict):
         return _fallback_response(
-            word_hint,
-            f"Failed to parse Gemini JSON: {e}",
-            raw,
+            word=word_hint,
+            video_path=video_path,
+            reason="Gemini returned JSON that was not an object.",
+            raw=raw,
         )
 
-    # Validate against schema
     try:
-        # Ensure word exists (sometimes Gemini might omit it)
-        if isinstance(json_data, dict) and "word" not in json_data and word_hint:
-            json_data["word"] = word_hint
-        return EvaluationResponse(**json_data)
+        normalized = _normalize_eval_payload(json_data, word_hint=word_hint, raw=raw)
+        # keep the video path if caller provides it
+        if video_path:
+            normalized["video_path"] = video_path
+        return EvaluationResponse(**normalized)
     except Exception as e:
         return _fallback_response(
-            word_hint,
-            f"Response validation failed: {e}",
-            raw,
+            word=word_hint,
+            video_path=video_path,
+            reason=f"Response validation failed: {e}",
+            raw=raw,
         )
 
 
 def get_gemini_response(demonstrator_json: str, user_attempt_json: str) -> EvaluationResponse:
-    """
-    Receives 2 JSONs (demonstrator and user_attempt as JSON strings),
-    sends them to Gemini with the global context prompt,
-    and returns a validated evaluation response.
-
-    IMPORTANT: This function should never raise due to Gemini formatting.
-    It returns a fallback EvaluationResponse instead.
-    """
-    # Try to pull the word out of the user attempt JSON for better fallbacks
+    # Always define word_hint first so it's available everywhere
     word_hint = ""
     try:
         attempt_obj = json.loads(user_attempt_json)
@@ -129,9 +186,8 @@ def get_gemini_response(demonstrator_json: str, user_attempt_json: str) -> Evalu
     except Exception:
         pass
 
-    # Build the full prompt with system instruction and data
     system_instruction = f"""
-{GLOBAL_CONTEXT['task']}
+{GLOBAL_CONTEXT.get('task','')}
 
 CONTEXT:
 - Domain: {GLOBAL_CONTEXT['context']['domain']}
@@ -173,12 +229,16 @@ Return ONLY a single JSON object. No markdown. No extra text.
             model="gemini-2.5-flash",
             contents=prompt,
         )
-        return parse_gemini_json_response(response.text, word_hint=word_hint)
+
+        text = getattr(response, "text", None)
+        if not text:
+            text = str(response)
+
+        return parse_gemini_json_response(text or "", word_hint=word_hint)
 
     except Exception as e:
-        # Never raise up to FastAPI; return fallback so frontend can show Retry UI nicely
         return _fallback_response(
-            word_hint,
-            f"Gemini API call failed: {e}",
-            "",
+            word=word_hint,
+            reason=f"Gemini API call failed: {e}",
+            raw="",
         )
