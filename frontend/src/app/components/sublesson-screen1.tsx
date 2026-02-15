@@ -228,7 +228,7 @@ export default function SublessonScreen({
   }, []);
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-gray-900 via-purple-900 to-gray-900 text-white">
+    <div className="min-h-screen bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 text-white">
       {/* Evaluation modal overlay */}
       {evalResult && (
         <EvaluationModal
@@ -240,29 +240,39 @@ export default function SublessonScreen({
       )}
 
       {/* Header */}
-      <div className="flex items-center justify-between p-6">
-        <button onClick={onBack} className="flex items-center gap-2 text-purple-300 hover:text-white transition">
+      <div className="flex items-center justify-between p-6 border-b border-slate-800">
+        <button onClick={onBack} className="flex items-center gap-2 text-slate-300 hover:text-white transition">
           <ArrowLeft size={24} />
-          <span>Back</span>
+          <span className="font-medium">Back</span>
         </button>
-        <h1 className="text-2xl font-bold">{unitName}</h1>
+        <h1 className="text-2xl font-bold text-white">{unitName}</h1>
         <div className="w-20"></div>
       </div>
 
-      <div className="max-w-6xl mx-auto px-6 pb-12">
-        <div className="text-center mb-8">
-          <h2 className="text-4xl font-bold text-purple-300 mb-2">{wordPhrase}</h2>
-          <p className="text-gray-300">Watch the example to sign "{wordPhrase}", then record yourself!</p>
+      <div className="max-w-7xl mx-auto px-6 pb-12">
+        <div className="text-center mb-12 mt-8">
+          <p className="text-2xl text-slate-400 mb-3 font-medium">Learn to sign:</p>
+          <h2 className="text-6xl font-bold bg-gradient-to-r from-purple-400 via-purple-500 to-purple-600 bg-clip-text text-transparent mb-4">"{wordPhrase}"</h2>
+          <p className="text-xl text-slate-200">Watch the example, then record yourself signing it!</p>
+        </div>
+
+        {/* Connecting Arrow */}
+        <div className="flex items-center justify-center mb-8">
+          <div className="flex-1 h-px bg-slate-700"></div>
+          <svg className="mx-4 text-purple-400" width="40" height="24" viewBox="0 0 40 24" fill="none">
+            <path d="M4 12h32M28 4l8 8-8 8" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
+          <div className="flex-1 h-px bg-slate-700"></div>
         </div>
 
         <div className="grid md:grid-cols-2 gap-8">
           {/* Example Video */}
-          <div className="space-y-4">
-            <h3 className="text-xl font-semibold text-gray-200 flex items-center gap-2">
-              <span className="bg-purple-700 rounded-full w-8 h-8 flex items-center justify-center text-sm">1</span>
+          <div className="space-y-6 bg-slate-900/50 rounded-3xl p-6 border-2 border-slate-700 shadow-2xl">
+            <h3 className="text-2xl font-bold text-white flex items-center gap-4">
+              <span className="bg-gradient-to-br from-purple-600 to-purple-800 rounded-full w-16 h-16 flex items-center justify-center text-3xl font-bold shadow-lg border-2 border-purple-400">1</span>
               Watch Example
             </h3>
-            <div className="relative bg-gray-800 rounded-2xl overflow-hidden shadow-2xl">
+            <div className="relative bg-slate-950 rounded-2xl overflow-hidden shadow-2xl ring-2 ring-purple-500/20">
               <video
                 ref={exampleVideoRef}
                 src={videoPath}
@@ -279,19 +289,19 @@ export default function SublessonScreen({
           </div>
 
           {/* User Recording */}
-          <div className="space-y-4">
-            <h3 className="text-xl font-semibold text-gray-200 flex items-center gap-2">
-              <span className="bg-purple-700 rounded-full w-8 h-8 flex items-center justify-center text-sm">2</span>
+          <div className="space-y-6 bg-slate-900/50 rounded-3xl p-6 border-2 border-slate-700 shadow-2xl">
+            <h3 className="text-2xl font-bold text-white flex items-center gap-4">
+              <span className="bg-gradient-to-br from-purple-600 to-purple-900 rounded-full w-16 h-16 flex items-center justify-center text-3xl font-bold shadow-lg border-2 border-purple-400">2</span>
               Your Turn
             </h3>
 
             {!stream && !hasRecorded && (
-              <div className="bg-gray-800 rounded-2xl p-12 text-center shadow-2xl aspect-video flex flex-col items-center justify-center">
-                <Video className="w-16 h-16 text-purple-300 mb-4" />
-                <p className="text-gray-400 mb-6">Ready to practice?</p>
+              <div className="bg-gradient-to-br from-slate-800 to-slate-900 rounded-2xl p-12 text-center shadow-2xl aspect-video flex flex-col items-center justify-center border-2 border-slate-700">
+                <Video className="w-20 h-20 text-purple-400 mb-6" />
+                <p className="text-xl text-slate-200 mb-8 font-medium">Ready to practice?</p>
                 <button
                   onClick={startCamera}
-                  className="bg-purple-700 hover:bg-gray-700 text-white px-8 py-3 rounded-full font-semibold transition shadow-lg"
+                  className="bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-500 hover:to-purple-600 text-white px-12 py-5 rounded-xl font-bold text-lg transition shadow-2xl transform hover:scale-105 border-2 border-purple-400"
                 >
                   Start Camera
                 </button>
@@ -300,7 +310,7 @@ export default function SublessonScreen({
 
             {stream && !hasRecorded && (
               <div className="space-y-4">
-                <div className="relative bg-gray-800 rounded-2xl overflow-hidden shadow-2xl">
+                <div className="relative bg-slate-950 rounded-2xl overflow-hidden shadow-2xl ring-2 ring-purple-500/20">
                   <video
                     ref={userVideoRef}
                     autoPlay
@@ -312,12 +322,12 @@ export default function SublessonScreen({
                   </video>
                   {isRecording && (
                     <div className="absolute top-4 right-4 flex flex-col items-end gap-2">
-                      <div className="flex items-center gap-2 bg-red-600 px-4 py-2 rounded-full">
+                      <div className="flex items-center gap-2 bg-red-600 px-5 py-3 rounded-xl shadow-lg border-2 border-red-400">
                         <div className="w-3 h-3 bg-white rounded-full animate-pulse"></div>
-                        <span className="text-sm font-semibold">Recording</span>
+                        <span className="text-base font-bold">Recording</span>
                       </div>
-                      <div className="bg-black bg-opacity-70 px-3 py-1 rounded-full">
-                        <span className="text-xs font-mono text-white">{Math.ceil(recordingTimeLeft)}s left</span>
+                      <div className="bg-black/80 px-4 py-2 rounded-xl border border-slate-600">
+                        <span className="text-sm font-mono text-white font-bold">{Math.ceil(recordingTimeLeft)}s left</span>
                       </div>
                     </div>
                   )}
@@ -326,20 +336,20 @@ export default function SublessonScreen({
                   {!isRecording ? (
                     <button
                       onClick={startRecording}
-                      className="flex-1 bg-red-600 hover:bg-red-700 text-white px-6 py-4 rounded-xl font-semibold transition shadow-lg flex items-center justify-center gap-2"
+                      className="flex-1 bg-gradient-to-r from-red-600 to-red-700 hover:from-red-500 hover:to-red-600 text-white px-6 py-5 rounded-xl font-bold text-lg transition shadow-2xl flex items-center justify-center gap-3 border-2 border-red-400 transform hover:scale-105"
                     >
-                      <div className="w-4 h-4 bg-white rounded-full"></div>
+                      <div className="w-5 h-5 bg-white rounded-full"></div>
                       Start Recording
                     </button>
                   ) : (
                     <button
                       onClick={stopRecording}
-                      className="flex-1 bg-gray-700 hover:bg-purple-700 text-white px-6 py-4 rounded-xl font-semibold transition shadow-lg"
+                      className="flex-1 bg-gradient-to-r from-slate-700 to-slate-800 hover:from-purple-700 hover:to-purple-800 text-white px-6 py-5 rounded-xl font-bold text-lg transition shadow-lg border-2 border-slate-600"
                     >
                       Stop Recording
                     </button>
                   )}
-                  <button onClick={stopCamera} className="px-6 py-4 bg-gray-700 hover:bg-purple-700 rounded-xl transition">
+                  <button onClick={stopCamera} className="px-6 py-5 bg-slate-700 hover:bg-slate-600 rounded-xl transition border-2 border-slate-600 font-bold">
                     Cancel
                   </button>
                 </div>
@@ -348,7 +358,7 @@ export default function SublessonScreen({
 
             {hasRecorded && (
               <div className="space-y-4">
-                <div className="relative bg-gray-800 rounded-2xl overflow-hidden shadow-2xl">
+                <div className="relative bg-slate-950 rounded-2xl overflow-hidden shadow-2xl ring-2 ring-purple-500/20">
                   <video
                     ref={recordedVideoRef}
                     playsInline
@@ -367,18 +377,18 @@ export default function SublessonScreen({
                       if (!v) return;
                       v.paused ? v.play().catch(() => {}) : v.pause();
                     }}
-                    className="absolute bottom-3 left-3 bg-black/60 hover:bg-black/80 text-white rounded-full p-2 transition"
+                    className="absolute bottom-4 left-4 bg-black/70 hover:bg-black/90 text-white rounded-full p-3 transition border border-slate-500"
                   >
-                    {recordedPlaying ? <Pause size={18} /> : <Play size={18} />}
+                    {recordedPlaying ? <Pause size={20} /> : <Play size={20} />}
                   </button>
                 </div>
 
                 {evalError && (
-                  <div className="bg-red-900/40 border border-red-600/50 rounded-xl p-3 text-red-300 text-sm text-center">
+                  <div className="bg-red-900/50 border-2 border-red-600 rounded-xl p-4 text-red-200 text-base text-center font-medium shadow-lg">
                     {evalError}
                     <button
                       onClick={() => recordedBlob && evaluate(recordedBlob, pendingAction.current)}
-                      className="ml-2 underline hover:text-white transition"
+                      className="ml-2 underline hover:text-white transition font-bold"
                     >
                       Retry
                     </button>
@@ -389,23 +399,23 @@ export default function SublessonScreen({
                   <button
                     onClick={handleTryAgain}
                     disabled={evaluating}
-                    className="flex-1 bg-gray-700 hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed text-white px-6 py-4 rounded-xl font-semibold transition shadow-lg flex items-center justify-center gap-2"
+                    className="flex-1 bg-gradient-to-r from-slate-700 to-slate-800 hover:from-purple-700 hover:to-purple-800 disabled:opacity-50 disabled:cursor-not-allowed text-white px-6 py-5 rounded-xl font-bold text-lg transition shadow-lg flex items-center justify-center gap-2 border-2 border-slate-600"
                   >
                     {evaluating && pendingAction.current === 'retry' ? (
-                      <><Loader2 size={20} className="animate-spin" /> Evaluating...</>
+                      <><Loader2 size={22} className="animate-spin" /> Evaluating...</>
                     ) : (
-                      <><RotateCcw size={20} /> Try Again</>
+                      <><RotateCcw size={22} /> Try Again</>
                     )}
                   </button>
                   <button
                     onClick={handleComplete}
                     disabled={evaluating}
-                    className="flex-1 bg-purple-700 hover:bg-purple-600 disabled:opacity-50 disabled:cursor-not-allowed text-white px-6 py-4 rounded-xl font-semibold transition shadow-lg flex items-center justify-center gap-2"
+                    className="flex-1 bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-500 hover:to-purple-600 disabled:opacity-50 disabled:cursor-not-allowed text-white px-6 py-5 rounded-xl font-bold text-lg transition shadow-2xl flex items-center justify-center gap-2 border-2 border-purple-400 transform hover:scale-105"
                   >
                     {evaluating && pendingAction.current === 'complete' ? (
-                      <><Loader2 size={20} className="animate-spin" /> Evaluating...</>
+                      <><Loader2 size={22} className="animate-spin" /> Evaluating...</>
                     ) : (
-                      <><CheckCircle size={20} /> Complete</>
+                      <><CheckCircle size={22} /> Complete</>
                     )}
                   </button>
                 </div>
@@ -414,14 +424,25 @@ export default function SublessonScreen({
           </div>
         </div>
 
-        <div className="mt-12 bg-purple-900/20 rounded-2xl p-6 border border-purple-700/40">
-          <h4 className="font-semibold text-lg mb-3 text-gray-200">💡 Tips:</h4>
-          <ul className="space-y-2 text-gray-300">
-            <li>• Watch the example video carefully before recording</li>
-            <li>• Make sure you're in a well-lit area</li>
-            <li>• Keep your hands visible in the camera frame</li>
-            <li>• Don't worry about being perfect - practice makes progress!</li>
-          </ul>
+        <div className="mt-12">
+          <h4 className="font-bold text-2xl mb-6 text-white flex items-center gap-3">
+            <span className="text-3xl">💡</span>
+            Tips for Success
+          </h4>
+          <div className="grid md:grid-cols-2 gap-4">
+            <div className="bg-gradient-to-br from-slate-800 to-slate-900 rounded-xl p-5 border-2 border-slate-700 shadow-lg hover:border-purple-500/50 transition">
+              <p className="text-slate-100 font-medium text-base">Watch the example video carefully before recording</p>
+            </div>
+            <div className="bg-gradient-to-br from-slate-800 to-slate-900 rounded-xl p-5 border-2 border-slate-700 shadow-lg hover:border-purple-500/50 transition">
+              <p className="text-slate-100 font-medium text-base">Make sure you're in a well-lit area</p>
+            </div>
+            <div className="bg-gradient-to-br from-slate-800 to-slate-900 rounded-xl p-5 border-2 border-slate-700 shadow-lg hover:border-purple-500/50 transition">
+              <p className="text-slate-100 font-medium text-base">Keep your hands visible in the camera frame</p>
+            </div>
+            <div className="bg-gradient-to-br from-slate-800 to-slate-900 rounded-xl p-5 border-2 border-slate-700 shadow-lg hover:border-purple-500/50 transition">
+              <p className="text-slate-100 font-medium text-base">Don't worry about being perfect - practice makes progress!</p>
+            </div>
+          </div>
         </div>
       </div>
     </div>

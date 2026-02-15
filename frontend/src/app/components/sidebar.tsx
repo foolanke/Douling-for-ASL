@@ -108,7 +108,7 @@ export function Sidebar({ streak, level, totalXP, levelProgress, xpForNextLevel,
       <nav className="p-4 space-y-2 border-b border-slate-800">
         <Button
           variant="default"
-          className="w-full justify-start gap-4 h-14 text-base bg-gradient-to-r from-blue-600 to-purple-600 text-slate-100 shadow-lg border border-blue-500/20"
+          className="w-full justify-start gap-4 h-14 text-base bg-gradient-to-r from-purple-700 via-purple-600 to-purple-500 text-white shadow-lg border border-purple-400/30 hover:from-purple-600 hover:via-purple-500 hover:to-purple-400 transition-all"
         >
           <Home className="w-6 h-6" />
           <span className="font-medium">Learn</span>
@@ -142,7 +142,7 @@ export function Sidebar({ streak, level, totalXP, levelProgress, xpForNextLevel,
         >
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-3">
-              <Star className="w-6 h-6 text-yellow-400 fill-yellow-400" />
+              <Star className="w-6 h-6 text-yellow-400 fill-none stroke-yellow-400 stroke-2" />
               <span className="text-base font-semibold text-slate-100">Level {level}</span>
             </div>
             <span className="text-sm text-slate-400">{totalXP} XP</span>
@@ -153,19 +153,25 @@ export function Sidebar({ streak, level, totalXP, levelProgress, xpForNextLevel,
 
         {/* Streak */}
         <motion.div
-          className="flex-1 bg-gradient-to-br from-orange-500/10 to-red-500/10 rounded-xl p-5 border border-orange-500/20 cursor-pointer flex flex-col justify-center"
+          className={`flex-1 rounded-xl p-5 border cursor-pointer flex flex-col justify-center ${
+            streak >= 3
+              ? 'bg-gradient-to-br from-red-500/10 to-orange-500/10 border-red-500/20'
+              : 'bg-gradient-to-br from-slate-800/50 to-slate-900/50 border-slate-700'
+          }`}
           whileHover={{ scale: 1.03 }}
           whileTap={{ scale: 0.97 }}
           onClick={() => setExpandedCard('streak')}
         >
           <div className="flex items-center justify-between mb-2">
             <div className="flex items-center gap-3">
-              <Flame className="w-6 h-6 text-orange-400" />
-              <span className="text-base font-semibold text-slate-100">{streak} Day Streak</span>
+              <Flame className={`w-6 h-6 ${streak >= 3 ? 'text-red-500' : 'text-slate-600'}`} />
+              <span className={`text-base font-semibold ${streak >= 3 ? 'text-slate-100' : 'text-slate-500'}`}>{streak} Day Streak</span>
             </div>
-            <span className="text-sm text-orange-400 font-bold">~</span>
+            <span className={`text-sm font-bold ${streak >= 3 ? 'text-red-400' : 'text-slate-600'}`}>~</span>
           </div>
-          <p className="text-sm text-slate-400 mt-1">Keep it up!</p>
+          <p className={`text-sm mt-1 ${streak >= 3 ? 'text-slate-400' : 'text-slate-600'}`}>
+            {streak >= 3 ? 'Keep it up!' : 'Build your streak!'}
+          </p>
         </motion.div>
 
         {/* Daily Goal */}
@@ -515,7 +521,7 @@ export function Sidebar({ streak, level, totalXP, levelProgress, xpForNextLevel,
 
           {expandedCard === 'level' && (
             <div className="text-center">
-              <Star className="w-16 h-16 text-yellow-400 fill-yellow-400 mx-auto mb-4" />
+              <Star className="w-16 h-16 text-yellow-400 fill-none stroke-yellow-400 stroke-2 mx-auto mb-4" />
               <h2 className="text-3xl font-bold text-slate-100 mb-2">Level {level}</h2>
               <p className="text-lg text-slate-400 mb-6">{totalXP} Total XP</p>
               <Progress value={levelProgress} className="h-4 bg-slate-800 mb-3" />
