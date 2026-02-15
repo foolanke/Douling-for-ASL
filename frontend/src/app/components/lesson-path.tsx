@@ -1,10 +1,10 @@
-import { useState, useCallback, useRef, useEffect } from "react";
+import { useState, useCallback, useRef, useEffect, useMemo } from "react";
 import { motion } from "motion/react";
-import { LessonNode } from "./lesson-node";
 import { Confetti } from "./confetti";
 import { LessonCompleteModal } from "./lesson-complete-modal";
 import { Sidebar } from "./sidebar";
-import { PathDecorations } from "./path-decorations";
+import { LearningPath, type PathLesson } from "./learning-path";
+import type { LessonStatus } from "./lesson-node";
 import SublessonScreen from "./sublesson-screen1";
 import SublessonScreen2 from "./sublesson-screen2";
 import SublessonScreen3 from "./sublesson-screen3";
@@ -19,7 +19,7 @@ import {
   generateUnitTestSlots,
   updateMastery,
 } from "../lib/lesson-algorithm";
-import { Sparkles, Star, Zap } from "lucide-react";
+import { Zap } from "lucide-react";
 
 interface Lesson {
   id: number;
@@ -28,31 +28,35 @@ interface Lesson {
   type: "lesson" | "checkpoint" | "achievement";
   xp: number;
   unit: number;
+  position: { x: number; y: number };
 }
 
 const lessons: Lesson[] = [
-  { id: 1, title: "Lesson 1", description: "Greetings", type: "lesson", xp: 10, unit: 1 },
-  { id: 2, title: "Lesson 2", description: "Polite Expressions", type: "lesson", xp: 10, unit: 1 },
-  { id: 3, title: "Lesson 3", description: "Politeness Markers", type: "lesson", xp: 15, unit: 1 },
-  { id: 4, title: "Unit 1 Test", description: "Test your skills", type: "checkpoint", xp: 25, unit: 1 },
+  // Unit 1: Greetings & Basics
+  { id: 1, title: "Lesson 1", description: "Greetings", type: "lesson", xp: 10, unit: 1, position: { x: 280, y: 240 } },
+  { id: 2, title: "Lesson 2", description: "Polite Expressions", type: "lesson", xp: 10, unit: 1, position: { x: 400, y: 520 } },
+  { id: 3, title: "Lesson 3", description: "Politeness Markers", type: "lesson", xp: 15, unit: 1, position: { x: 200, y: 800 } },
+  { id: 4, title: "Unit 1 Test", description: "Test your skills", type: "checkpoint", xp: 25, unit: 1, position: { x: 340, y: 1080 } },
 
   // Unit 2 (Family)
-  { id: 5, title: "Lesson 4", description: "Family: Kids", type: "lesson", xp: 15, unit: 2 },
-  { id: 6, title: "Lesson 5", description: "Family: Adults", type: "lesson", xp: 15, unit: 2 },
-  { id: 7, title: "Lesson 6", description: "Family: Parents", type: "lesson", xp: 20, unit: 2 },
-  { id: 8, title: "Unit 2 Test", description: "Test your skills", type: "checkpoint", xp: 50, unit: 2 },
+  { id: 5, title: "Lesson 4", description: "Family: Kids", type: "lesson", xp: 15, unit: 2, position: { x: 200, y: 1580 } },
+  { id: 6, title: "Lesson 5", description: "Family: Adults", type: "lesson", xp: 15, unit: 2, position: { x: 380, y: 1860 } },
+  { id: 7, title: "Lesson 6", description: "Family: Parents", type: "lesson", xp: 20, unit: 2, position: { x: 220, y: 2140 } },
+  { id: 8, title: "Unit 2 Test", description: "Test your skills", type: "checkpoint", xp: 50, unit: 2, position: { x: 360, y: 2420 } },
 
-  { id: 10, title: "Lesson 7", description: "Siblings", type: "lesson", xp: 20, unit: 3 },
-  { id: 11, title: "Lesson 8", description: "School Roles", type: "lesson", xp: 20, unit: 3 },
-  { id: 12, title: "Lesson 9", description: "Social Bonds", type: "lesson", xp: 25, unit: 3 },
-  { id: 13, title: "Unit 3 Test", description: "Checkpoint", type: "checkpoint", xp: 30, unit: 3 },
+  // Unit 3 (Daily Life)
+  { id: 10, title: "Lesson 7", description: "Siblings", type: "lesson", xp: 20, unit: 3, position: { x: 190, y: 2840 } },
+  { id: 11, title: "Lesson 8", description: "School Roles", type: "lesson", xp: 20, unit: 3, position: { x: 390, y: 3120 } },
+  { id: 12, title: "Lesson 9", description: "Social Bonds", type: "lesson", xp: 25, unit: 3, position: { x: 210, y: 3400 } },
+  { id: 13, title: "Unit 3 Test", description: "Checkpoint", type: "checkpoint", xp: 30, unit: 3, position: { x: 350, y: 3680 } },
 
-  { id: 14, title: "Lesson 11", description: "Places & Locations", type: "lesson", xp: 25, unit: 4 },
-  { id: 15, title: "Lesson 12", description: "Travel", type: "lesson", xp: 25, unit: 4 },
-  { id: 16, title: "Lesson 13", description: "Shopping", type: "lesson", xp: 30, unit: 4 },
-  { id: 17, title: "Lesson 14", description: "Weather", type: "lesson", xp: 30, unit: 4 },
-  { id: 18, title: "Lesson 15", description: "Time & Dates", type: "lesson", xp: 30, unit: 4 },
-  { id: 19, title: "Final Test", description: "You did it!", type: "achievement", xp: 100, unit: 4 },
+  // Unit 4 (Out & About)
+  { id: 14, title: "Lesson 11", description: "Places & Locations", type: "lesson", xp: 25, unit: 4, position: { x: 180, y: 4100 } },
+  { id: 15, title: "Lesson 12", description: "Travel", type: "lesson", xp: 25, unit: 4, position: { x: 380, y: 4380 } },
+  { id: 16, title: "Lesson 13", description: "Shopping", type: "lesson", xp: 30, unit: 4, position: { x: 220, y: 4660 } },
+  { id: 17, title: "Lesson 14", description: "Weather", type: "lesson", xp: 30, unit: 4, position: { x: 400, y: 4940 } },
+  { id: 18, title: "Lesson 15", description: "Time & Dates", type: "lesson", xp: 30, unit: 4, position: { x: 200, y: 5220 } },
+  { id: 19, title: "Final Test", description: "You did it!", type: "achievement", xp: 100, unit: 4, position: { x: 300, y: 5540 } },
 ];
 
 // Words for each lesson (keyed by lesson id)
@@ -197,13 +201,6 @@ const unitLessons: Record<number, number[]> = {
   4: [14, 15, 16, 17, 18],
 };
 
-const positions: ("left" | "center" | "right")[] = [
-  "center", "right", "left", "center",
-  "left", "right", "center", "left", "center",
-  "right", "left", "center", "center",
-  "left", "right", "center", "left", "right", "center",
-];
-
 function loadFromStorage<T>(key: string, fallback: T): T {
   try {
     const raw = localStorage.getItem(key);
@@ -234,6 +231,10 @@ function getLevelInfo(xp: number) {
     levelProgress: Math.round((xpIntoLevel / xpNeeded) * 100),
   };
 }
+
+// Build a lesson id → index lookup
+const lessonIdToIndex = new Map<number, number>();
+lessons.forEach((l, i) => lessonIdToIndex.set(l.id, i));
 
 export function LessonPath() {
   const [completedLessons, setCompletedLessons] = useState<Set<number>>(
@@ -628,6 +629,49 @@ export function LessonPath() {
     return previousCompleted ? "unlocked" : "locked";
   };
 
+  // Build enriched lessons with status for the path component
+  const pathLessons: PathLesson[] = useMemo(() => {
+    // Find the first unlocked (non-completed) lesson index
+    let firstUnlockedIndex = -1;
+    for (let i = 0; i < lessons.length; i++) {
+      if (!completedLessons.has(i)) {
+        if (i === 0 || completedLessons.has(i - 1)) {
+          firstUnlockedIndex = i;
+          break;
+        }
+      }
+    }
+
+    return lessons.map((lesson, index) => {
+      let status: LessonStatus;
+      if (completedLessons.has(index)) {
+        status = "completed";
+      } else if (index === firstUnlockedIndex) {
+        status = "current";
+      } else if (index === 0 || completedLessons.has(index - 1)) {
+        status = "available";
+      } else {
+        status = "locked";
+      }
+
+      return {
+        ...lesson,
+        status,
+      };
+    });
+  }, [completedLessons]);
+
+  // Handle click from the LearningPath component (receives lesson id, need to convert to index)
+  const handlePathLessonClick = useCallback(
+    (lessonId: number) => {
+      const index = lessonIdToIndex.get(lessonId);
+      if (index !== undefined) {
+        handleLessonClick(index);
+      }
+    },
+    [handleLessonClick]
+  );
+
   // Render active sublesson slot
   if (activeView === "sublesson" && lessonSlots.length > 0) {
     const slot = lessonSlots[currentSlotIndex];
@@ -676,8 +720,6 @@ export function LessonPath() {
   }
 
   // Otherwise, show the main lesson path
-  const unitStarts = [0, 4, 8, 12];
-
   return (
     <div className="flex h-screen bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 overflow-hidden">
       <Sidebar
@@ -742,118 +784,125 @@ export function LessonPath() {
           </div>
         )}
 
-        {/* Floating Logo */}
-        <motion.div
-          className="absolute top-6 left-8 z-30 flex items-center gap-3 bg-slate-900/60 backdrop-blur-xl px-5 py-3 rounded-2xl shadow-2xl border border-slate-700/50"
-          initial={{ y: -100, opacity: 0 }}
-          animate={{ y: 0, opacity: 1 }}
-          transition={{ type: "spring", stiffness: 100 }}
-        >
-          <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-purple-600 rounded-xl flex items-center justify-center shadow-lg">
-            <Sparkles className="w-6 h-6 text-white" />
-          </div>
-          <h1 className="text-2xl font-bold bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">
-            Douling
-          </h1>
-        </motion.div>
+        <div className="flex-1 overflow-x-hidden overflow-y-auto scroll-container relative" style={{ background: '#05050f' }}>
+          {/* Full-width space background */}
+          <div className="absolute inset-0 pointer-events-none" style={{ height: '5800px' }}>
+            {/* Deep space gradient */}
+            <div className="absolute inset-0 h-full" style={{
+              background: 'linear-gradient(180deg, #0a0a1a 0%, #0d0820 20%, #05050f 40%, #0a0618 60%, #0d0820 80%, #05050f 100%)',
+            }} />
 
-        <div className="flex-1 overflow-y-auto overflow-x-hidden relative">
-          <PathDecorations totalLessons={lessons.length} />
-
-          <div className="relative max-w-2xl mx-auto py-16 px-8" ref={containerRef}>
-            {/* Connecting paths between stars */}
-            {pathLines.length > 0 && (
-              <svg className="absolute inset-0 w-full h-full pointer-events-none" style={{ zIndex: 1 }}>
-                <defs>
-                  <linearGradient id="pathLit" x1="0%" y1="0%" x2="0%" y2="100%">
-                    <stop offset="0%" stopColor="#a78bfa" />
-                    <stop offset="100%" stopColor="#7c3aed" />
-                  </linearGradient>
-                  <linearGradient id="pathDim" x1="0%" y1="0%" x2="0%" y2="100%">
-                    <stop offset="0%" stopColor="#334155" />
-                    <stop offset="100%" stopColor="#1e293b" />
-                  </linearGradient>
-                  <filter id="pathGlow">
-                    <feGaussianBlur stdDeviation="3" result="blur" />
-                    <feMerge>
-                      <feMergeNode in="blur" />
-                      <feMergeNode in="SourceGraphic" />
-                    </feMerge>
-                  </filter>
-                </defs>
-
-                {pathLines.map((line, index) => {
-                  const isLit = getLessonStatus(index) === "completed";
-                  const midY = (line.y1 + line.y2) / 2;
-                  const pathD = `M ${line.x1} ${line.y1} C ${line.x1} ${midY}, ${line.x2} ${midY}, ${line.x2} ${line.y2}`;
-
-                  return (
-                    <motion.path
-                      key={`path-${index}`}
-                      d={pathD}
-                      stroke={isLit ? "url(#pathLit)" : "url(#pathDim)"}
-                      strokeWidth={isLit ? 3 : 2}
-                      fill="none"
-                      strokeLinecap="round"
-                      filter={isLit ? "url(#pathGlow)" : undefined}
-                      opacity={isLit ? 0.8 : 0.3}
-                      initial={{ pathLength: 0 }}
-                      animate={{ pathLength: 1 }}
-                      transition={{ delay: index * 0.1 + 0.5, duration: 0.6, ease: "easeOut" }}
-                    />
-                  );
-                })}
-              </svg>
-            )}
-
-            <div className="relative flex flex-col gap-16" style={{ zIndex: 2 }}>
-              {lessons.map((lesson, index) => {
-                const isUnitStart = unitStarts.includes(index);
-                const unitNumber = unitStarts.indexOf(index) + 1;
-
+            {/* Pixelated star field - uses percentage-based x positions for full width */}
+            <svg className="absolute inset-0 w-full pointer-events-none pixelated" style={{ height: '5800px', imageRendering: 'pixelated' }} preserveAspectRatio="none" viewBox="0 0 1000 5800">
+              {/* Tiny dim stars */}
+              {Array.from({ length: 200 }, (_, i) => {
+                const x = ((i * 137 + 29) % 980) + 10;
+                const y = ((i * 251 + 73) % 5400) + 50;
+                const size = (i % 3 === 0) ? 2 : 1;
+                const opacity = 0.2 + (i % 5) * 0.08;
+                return <rect key={`s1-${i}`} x={x} y={y} width={size} height={size} fill="white" opacity={opacity} />;
+              })}
+              {/* Medium bright stars */}
+              {Array.from({ length: 100 }, (_, i) => {
+                const x = ((i * 193 + 47) % 960) + 20;
+                const y = ((i * 317 + 113) % 5300) + 100;
+                const opacity = 0.4 + (i % 4) * 0.1;
+                return <rect key={`s2-${i}`} x={x} y={y} width={2} height={2} fill="white" opacity={opacity} />;
+              })}
+              {/* Bright stars with cross glow */}
+              {Array.from({ length: 40 }, (_, i) => {
+                const x = ((i * 277 + 83) % 940) + 30;
+                const y = ((i * 439 + 157) % 5200) + 150;
+                const colors = ['#ffffff', '#a5b4fc', '#c4b5fd', '#93c5fd', '#fde68a'];
+                const color = colors[i % colors.length];
                 return (
-                  <div key={lesson.id} className="relative">
-                    {isUnitStart && (
-                      <motion.div
-                        className="mb-10 text-center relative z-20"
-                        initial={{ opacity: 0, scale: 0.8 }}
-                        animate={{ opacity: 1, scale: 1 }}
-                        transition={{ delay: index * 0.05, type: "spring" }}
-                      >
-                        <div className="inline-flex flex-col items-center gap-3 bg-gradient-to-r from-blue-600 to-purple-600 rounded-2xl px-8 py-4 shadow-2xl border-4 border-slate-800">
-                          <div className="flex items-center gap-3">
-                            <Star className="w-6 h-6 text-yellow-400 fill-yellow-400" />
-                            <h2 className="text-2xl font-bold text-white">Unit {unitNumber}</h2>
-                            <Star className="w-6 h-6 text-yellow-400 fill-yellow-400" />
-                          </div>
-                          <p className="text-sm text-blue-200 font-medium">
-                            {(["Greetings & Basics", "Family", "Daily Life", "Out & About"] as const)[unitNumber - 1]}
-                          </p>
-                          <button
-                            onClick={() => handleSkipToTest(unitNumber)}
-                            className="flex items-center gap-1.5 bg-yellow-400 hover:bg-yellow-300 text-slate-900 text-xs font-bold px-4 py-1.5 rounded-full transition shadow"
-                          >
-                            <Zap className="w-3.5 h-3.5" />
-                            Jump to Unit Test
-                          </button>
-                        </div>
-                      </motion.div>
-                    )}
-
-                    <div ref={(el) => { nodeRefs.current[index] = el; }}>
-                      <LessonNode
-                        lesson={lesson}
-                        status={getLessonStatus(index)}
-                        position={positions[index % positions.length]}
-                        onClick={() => handleLessonClick(index)}
-                        index={index}
-                      />
-                    </div>
-                  </div>
+                  <g key={`s3-${i}`}>
+                    <rect x={x} y={y} width={2} height={2} fill={color} opacity="0.9" />
+                    <rect x={x - 2} y={y} width={1} height={2} fill={color} opacity="0.3" />
+                    <rect x={x + 2} y={y} width={1} height={2} fill={color} opacity="0.3" />
+                    <rect x={x} y={y - 2} width={2} height={1} fill={color} opacity="0.3" />
+                    <rect x={x} y={y + 2} width={2} height={1} fill={color} opacity="0.3" />
+                  </g>
                 );
               })}
-            </div>
+            </svg>
 
+            {/* Pixel planet - top right */}
+            <svg className="absolute top-16 right-16 pointer-events-none pixelated" width="48" height="48" style={{ imageRendering: 'pixelated' }}>
+              <rect x="16" y="4" width="16" height="4" fill="#6366f1" />
+              <rect x="8" y="8" width="32" height="4" fill="#818cf8" />
+              <rect x="4" y="12" width="40" height="8" fill="#6366f1" />
+              <rect x="4" y="20" width="40" height="8" fill="#4f46e5" />
+              <rect x="8" y="28" width="32" height="4" fill="#4338ca" />
+              <rect x="4" y="32" width="40" height="4" fill="#3730a3" />
+              <rect x="8" y="36" width="32" height="4" fill="#4338ca" />
+              <rect x="16" y="40" width="16" height="4" fill="#3730a3" />
+              <rect x="0" y="22" width="4" height="2" fill="#a5b4fc" opacity="0.6" />
+              <rect x="44" y="22" width="4" height="2" fill="#a5b4fc" opacity="0.6" />
+              <rect x="0" y="24" width="8" height="2" fill="#818cf8" opacity="0.4" />
+              <rect x="40" y="24" width="8" height="2" fill="#818cf8" opacity="0.4" />
+              <rect x="12" y="12" width="8" height="4" fill="#a5b4fc" opacity="0.3" />
+            </svg>
+
+            {/* Small pixel moon - top left */}
+            <svg className="absolute top-[100px] left-12 pointer-events-none pixelated" width="28" height="28" style={{ imageRendering: 'pixelated' }}>
+              <rect x="8" y="0" width="12" height="4" fill="#e2e8f0" />
+              <rect x="4" y="4" width="20" height="4" fill="#cbd5e1" />
+              <rect x="4" y="8" width="20" height="4" fill="#e2e8f0" />
+              <rect x="4" y="12" width="20" height="4" fill="#94a3b8" />
+              <rect x="4" y="16" width="20" height="4" fill="#cbd5e1" />
+              <rect x="8" y="20" width="12" height="4" fill="#94a3b8" />
+              <rect x="8" y="8" width="4" height="4" fill="#94a3b8" opacity="0.5" />
+              <rect x="16" y="14" width="3" height="3" fill="#94a3b8" opacity="0.4" />
+            </svg>
+
+            {/* Distant pixel galaxy */}
+            <svg className="absolute top-[300px] right-[15%] pointer-events-none pixelated opacity-40" width="40" height="20" style={{ imageRendering: 'pixelated' }}>
+              <rect x="16" y="8" width="8" height="4" fill="#c4b5fd" />
+              <rect x="8" y="8" width="8" height="2" fill="#a78bfa" />
+              <rect x="24" y="10" width="8" height="2" fill="#a78bfa" />
+              <rect x="4" y="10" width="4" height="2" fill="#7c3aed" opacity="0.5" />
+              <rect x="32" y="8" width="4" height="2" fill="#7c3aed" opacity="0.5" />
+            </svg>
+
+            {/* Extra decorations for wider area */}
+            <svg className="absolute top-[600px] left-[8%] pointer-events-none pixelated opacity-30" width="32" height="32" style={{ imageRendering: 'pixelated' }}>
+              <rect x="12" y="0" width="8" height="4" fill="#f0abfc" />
+              <rect x="8" y="4" width="16" height="4" fill="#d946ef" />
+              <rect x="4" y="8" width="24" height="8" fill="#c026d3" />
+              <rect x="8" y="16" width="16" height="4" fill="#a21caf" />
+              <rect x="12" y="20" width="8" height="4" fill="#86198f" />
+            </svg>
+
+            <svg className="absolute top-[1200px] right-[10%] pointer-events-none pixelated opacity-25" width="36" height="36" style={{ imageRendering: 'pixelated' }}>
+              <rect x="14" y="2" width="8" height="4" fill="#67e8f9" />
+              <rect x="6" y="6" width="24" height="4" fill="#22d3ee" />
+              <rect x="2" y="10" width="32" height="8" fill="#06b6d4" />
+              <rect x="6" y="18" width="24" height="4" fill="#0891b2" />
+              <rect x="14" y="22" width="8" height="4" fill="#0e7490" />
+              <rect x="0" y="16" width="4" height="2" fill="#67e8f9" opacity="0.5" />
+              <rect x="32" y="16" width="4" height="2" fill="#67e8f9" opacity="0.5" />
+            </svg>
+
+            <svg className="absolute top-[2400px] left-[5%] pointer-events-none pixelated opacity-20" width="24" height="24" style={{ imageRendering: 'pixelated' }}>
+              <rect x="8" y="0" width="8" height="4" fill="#fde68a" />
+              <rect x="4" y="4" width="16" height="4" fill="#fbbf24" />
+              <rect x="4" y="8" width="16" height="8" fill="#f59e0b" />
+              <rect x="8" y="16" width="8" height="4" fill="#d97706" />
+            </svg>
+
+            <svg className="absolute top-[3600px] right-[8%] pointer-events-none pixelated opacity-30" width="28" height="28" style={{ imageRendering: 'pixelated' }}>
+              <rect x="10" y="0" width="8" height="4" fill="#a5b4fc" />
+              <rect x="6" y="4" width="16" height="4" fill="#818cf8" />
+              <rect x="2" y="8" width="24" height="8" fill="#6366f1" />
+              <rect x="6" y="16" width="16" height="4" fill="#4f46e5" />
+              <rect x="10" y="20" width="8" height="4" fill="#4338ca" />
+            </svg>
+          </div>
+
+          {/* Centered path content */}
+          <div className="relative min-h-[5800px] mx-auto" style={{ width: 'min(720px, 100vw)', maxWidth: '720px' }}>
+            <LearningPath lessons={pathLessons} onLessonClick={handlePathLessonClick} onSkipToTest={handleSkipToTest} />
           </div>
         </div>
       </div>
