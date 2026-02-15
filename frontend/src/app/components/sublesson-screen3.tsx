@@ -2,15 +2,17 @@ import { useState, useRef, useEffect } from 'react';
 import { ArrowLeft, Video, CheckCircle, RotateCcw } from 'lucide-react';
 
 interface SublessonScreen3Props {
+  unitName: string;
   wordPhrase: string;
   onComplete: () => void;
   onBack: () => void;
 }
 
-export default function SublessonScreen3({ 
-  wordPhrase, 
-  onComplete, 
-  onBack 
+export default function SublessonScreen3({
+  wordPhrase,
+  unitName,
+  onComplete,
+  onBack
 }: SublessonScreen3Props) {
   const [isRecording, setIsRecording] = useState(false);
   const [hasRecorded, setHasRecorded] = useState(false);
@@ -206,7 +208,7 @@ export default function SublessonScreen3({
           <ArrowLeft size={24} />
           <span>Back</span>
         </button>
-        <h1 className="text-2xl font-bold">Welcome & Basics</h1>
+        <h1 className="text-2xl font-bold">{unitName}</h1>
         <div className="w-20"></div>
       </div>
 

@@ -146,7 +146,7 @@ export function LessonNode({ lesson, status, position, onClick, index }: LessonN
             transition={{ delay: index * 0.08 + 0.3 }}
           >
             <div className="flex items-center gap-1.5">
-              <Star className="w-4 h-4 text-yellow-400" />
+              <Star className="w-4 h-4 text-yellow-400" fill={status === 'completed' ? 'currentColor' : 'none'} />
               <span className="text-sm font-bold text-yellow-300">{lesson.xp}</span>
             </div>
           </motion.div>

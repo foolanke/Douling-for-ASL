@@ -20,7 +20,7 @@ import {
   overrideUnitTestAfterMiss,
   updateMastery,
 } from "../lib/lesson-algorithm";
-import { Sparkles, Star } from "lucide-react";
+import { Sparkles, Star, Zap } from "lucide-react";
 
 interface Lesson {
   id: number;
@@ -232,12 +232,53 @@ export function LessonPath() {
   const sessionResults = useRef<{ word: string; slotIndex: number; wasCorrect: boolean }[]>([]);
 
   const isUnitTest = useRef(false);
+  const isSkipAttempt = useRef(false);
   const currentUnitWords = useRef<LessonWord[]>([]);
+  const lessonStartTime = useRef<number>(0);
+  const [lessonDuration, setLessonDuration] = useState<number>(0);
+  const [showSkipFailModal, setShowSkipFailModal] = useState(false);
 
   const { level, xpForNextLevel, levelProgress } = getLevelInfo(totalXP);
 
   const completeLesson = useCallback((lessonIndex: number) => {
     const lesson = lessons[lessonIndex];
+
+    // If this was a skip attempt, check pass rate (≥70% SS2 correct)
+    if (isSkipAttempt.current) {
+      const ss2Results = sessionResults.current;
+      const correct = ss2Results.filter((r) => r.wasCorrect).length;
+      const total = ss2Results.length;
+      const passed = total > 0 && correct / total >= 0.7;
+
+      setActiveView("path");
+      setLessonSlots([]);
+      setCurrentSlotIndex(0);
+      sessionResults.current = [];
+      isUnitTest.current = false;
+      isSkipAttempt.current = false;
+      currentUnitWords.current = [];
+
+      if (passed) {
+        // Mark all lessons in this unit as complete
+        const unitLessonIndices = lessons
+          .map((l, i) => ({ l, i }))
+          .filter(({ l }) => l.unit === lesson.unit)
+          .map(({ i }) => i);
+        setCompletedLessons((prev) => {
+          const newSet = new Set(prev);
+          unitLessonIndices.forEach((i) => newSet.add(i));
+          return newSet;
+        });
+        setTotalXP((prev) => prev + lesson.xp);
+        setDailyGoal((prev) => prev + lesson.xp);
+        setLessonDuration(Math.round((Date.now() - lessonStartTime.current) / 1000));
+        setShowConfetti(true);
+        setShowModal(true);
+      } else {
+        setShowSkipFailModal(true);
+      }
+      return;
+    }
 
     setCompletedLessons((prev) => {
       const newSet = new Set(prev);
@@ -248,6 +289,7 @@ export function LessonPath() {
     setTotalXP((prev) => prev + lesson.xp);
     setDailyGoal((prev) => prev + lesson.xp);
 
+    setLessonDuration(Math.round((Date.now() - lessonStartTime.current) / 1000));
     setShowConfetti(true);
     setShowModal(true);
 
@@ -264,6 +306,7 @@ export function LessonPath() {
     (lessonIndex: number) => {
       const lesson = lessons[lessonIndex];
       setCurrentLesson(lesson);
+      lessonStartTime.current = Date.now();
       sessionResults.current = [];
 
       if (lesson.type === "checkpoint") {
@@ -308,6 +351,28 @@ export function LessonPath() {
       }
     },
     [completeLesson]
+  );
+
+  const handleSkipToTest = useCallback(
+    (unitNumber: number) => {
+      const checkpoint = lessons.find((l) => l.unit === unitNumber && l.type === "checkpoint");
+      if (!checkpoint) return;
+      const unitWords = (unitLessons[unitNumber] ?? []).flatMap((id) => lessonWords[id] ?? []);
+      if (unitWords.length === 0) return;
+      for (const w of unitWords) {
+        if (!masteryMap.current[w.word]) masteryMap.current[w.word] = defaultWordStats();
+      }
+      setCurrentLesson(checkpoint);
+      lessonStartTime.current = Date.now();
+      sessionResults.current = [];
+      isUnitTest.current = true;
+      isSkipAttempt.current = true;
+      currentUnitWords.current = unitWords;
+      setLessonSlots(generateUnitTestSlots(unitWords, masteryMap.current));
+      setCurrentSlotIndex(0);
+      setActiveView("sublesson");
+    },
+    []
   );
 
   const handleSlotComplete = useCallback(
@@ -385,12 +450,16 @@ export function LessonPath() {
     const slot = lessonSlots[currentSlotIndex];
     const slotKey = `${currentSlotIndex}-${slot.type}-${slot.word}`;
 
+    const unitNames = ['Greetings & Basics', 'Family', 'Daily Life', 'Out & About'];
+    const unitName = unitNames[(currentLesson?.unit ?? 1) - 1] ?? 'ASL';
+
     if (slot.type === "ss1") {
       return (
         <SublessonScreen
           key={slotKey}
           wordPhrase={slot.word}
           videoPath={slot.videoPath}
+          unitName={unitName}
           onComplete={() => handleSlotComplete()}
           onBack={handleBack}
         />
@@ -404,6 +473,7 @@ export function LessonPath() {
           videoPath={slot.videoPath}
           correctAnswer={slot.correctAnswer}
           wrongAnswers={slot.wrongAnswers}
+          unitName={unitName}
           onComplete={(correct) => handleSlotComplete(correct)}
           onBack={handleBack}
         />
@@ -414,6 +484,7 @@ export function LessonPath() {
         <SublessonScreen3
           key={slotKey}
           wordPhrase={slot.word}
+          unitName={unitName}
           onComplete={() => handleSlotComplete()}
           onBack={handleBack}
         />
@@ -446,11 +517,35 @@ export function LessonPath() {
             isOpen={showModal}
             xpEarned={currentLesson.xp}
             lessonTitle={currentLesson.title}
+            duration={lessonDuration}
             onContinue={() => {
               setShowModal(false);
               setCurrentLesson(null);
             }}
           />
+        )}
+
+        {showSkipFailModal && (
+          <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-40 p-4">
+            <motion.div
+              className="bg-slate-900 border border-slate-700 rounded-2xl p-8 max-w-md w-full shadow-2xl text-center"
+              initial={{ scale: 0.8, opacity: 0, y: 50 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              transition={{ type: "spring", duration: 0.5 }}
+            >
+              <div className="w-20 h-20 bg-gradient-to-br from-orange-500 to-red-600 rounded-full flex items-center justify-center mx-auto mb-5 shadow-lg">
+                <Zap className="w-12 h-12 text-white" />
+              </div>
+              <h2 className="text-2xl font-bold text-white mb-2">Not quite yet!</h2>
+              <p className="text-slate-400 mb-6">Work through the lessons to build up your skills, then try the unit test again.</p>
+              <button
+                onClick={() => { setShowSkipFailModal(false); setCurrentLesson(null); }}
+                className="w-full bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 text-white py-3 text-lg font-bold rounded-xl shadow-lg transition"
+              >
+                Keep Practicing
+              </button>
+            </motion.div>
+          </div>
         )}
 
         {/* Floating Logo */}
@@ -569,7 +664,7 @@ export function LessonPath() {
                         animate={{ opacity: 1, scale: 1 }}
                         transition={{ delay: index * 0.05, type: "spring" }}
                       >
-                        <div className="inline-flex flex-col items-center gap-1 bg-gradient-to-r from-blue-600 to-purple-600 rounded-2xl px-8 py-4 shadow-2xl border-4 border-slate-800">
+                        <div className="inline-flex flex-col items-center gap-3 bg-gradient-to-r from-blue-600 to-purple-600 rounded-2xl px-8 py-4 shadow-2xl border-4 border-slate-800">
                           <div className="flex items-center gap-3">
                             <Star className="w-6 h-6 text-yellow-400 fill-yellow-400" />
                             <h2 className="text-2xl font-bold text-white">Unit {unitNumber}</h2>
@@ -578,6 +673,13 @@ export function LessonPath() {
                           <p className="text-sm text-blue-200 font-medium">
                             {(['Greetings & Basics', 'Family', 'Daily Life', 'Out & About'] as const)[unitNumber - 1]}
                           </p>
+                          <button
+                            onClick={() => handleSkipToTest(unitNumber)}
+                            className="flex items-center gap-1.5 bg-yellow-400 hover:bg-yellow-300 text-slate-900 text-xs font-bold px-4 py-1.5 rounded-full transition shadow"
+                          >
+                            <Zap className="w-3.5 h-3.5" />
+                            Jump to Unit Test
+                          </button>
                         </div>
                       </motion.div>
                     )}

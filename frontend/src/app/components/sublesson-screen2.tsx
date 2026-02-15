@@ -2,6 +2,7 @@ import { useState, useRef } from 'react';
 import { ArrowLeft, Play, Pause, CheckCircle, X } from 'lucide-react';
 
 interface MultipleChoiceQuizProps {
+  unitName: string;
   wordPhrase: string;
   videoPath: string;
   correctAnswer: string;
@@ -10,13 +11,14 @@ interface MultipleChoiceQuizProps {
   onBack: () => void;
 }
 
-export default function MultipleChoiceQuiz({ 
-  wordPhrase, 
-  videoPath, 
+export default function MultipleChoiceQuiz({
+  wordPhrase,
+  videoPath,
   correctAnswer,
   wrongAnswers,
-  onComplete, 
-  onBack 
+  unitName,
+  onComplete,
+  onBack
 }: MultipleChoiceQuizProps) {
   const [isPlaying, setIsPlaying] = useState(false);
   const [selectedAnswer, setSelectedAnswer] = useState<string | null>(null);
@@ -90,7 +92,7 @@ export default function MultipleChoiceQuiz({
           <ArrowLeft size={24} />
           <span>Back</span>
         </button>
-        <h1 className="text-2xl font-bold">Greetings</h1>
+        <h1 className="text-2xl font-bold">{unitName}</h1>
         <div className="w-20"></div>
       </div>
 
